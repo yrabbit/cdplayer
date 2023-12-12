@@ -1,20 +1,37 @@
 #include "ch32v003fun.h"
 
-#include "spi.h"
-#include "lcd.h"
-#include "display.h"
+#include <stdio.h>
+
+#include "mcp23017-i2c.h"
 
 int main()
 {
 	SystemInit();
 
-	spi_init();
-	lcd_init();
-	init_screen();
+	printf("CFGR0:%lx\n\r", RCC->CFGR0);
+	mcp23017_i2c_setup();
+	uint8_t const all_out[] = {0, 0};
+	uint8_t neg_pins[] = {0x14, 0xff};
+	mcp23017_i2c_send(MCP23017_I2C_ADDR, all_out, 2);
 
-	clear_screen();
-	refresh_screen();
 
+	uint8_t bit = 1;
+	uint8_t dir = 1;
+	while (1) {
+		if (dir == 1) {
+			bit <<= 1;
+		} else {
+			bit >>= 1;
+		}
+		neg_pins[1] = (0xff - bit);
+		mcp23017_i2c_send(MCP23017_I2C_ADDR, neg_pins, 2);
+		Delay_Ms(250);
+		if (bit == 0x80 || bit == 1) {
+			dir = -dir;
+		}
+	}
+
+	/*
 	// two buttons D2 and D3
 #define BOTTOM_KEY 2
 #define TOP_KEY 3
@@ -49,5 +66,6 @@ int main()
 				break;
 		}
 	}
+	*/
 }
 

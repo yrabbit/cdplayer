@@ -5,8 +5,10 @@
 
 #define SYSTEM_CORE_CLOCK 48000000
 #define APB_CLOCK SYSTEM_CORE_CLOCK
-#define FUNCONF_USE_HSE    1
 
+#define FUNCONF_USE_HSI 0
+#define FUNCONF_USE_HSE 1
+#define FUNCONF_USE_PLL 1
 
 #endif
 

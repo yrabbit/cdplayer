@@ -76,7 +76,7 @@ LIB_SRC           := ${LIB_DIR}/src
 LIB_INCLUDE       := ${LIB_DIR}/include
 LIB_OUTPUT        := ${LIB_DIR}/${OUTPUT}-lib
 LIB_SENTINEL      := ${LIB_OUTPUT}/.sentinel
-LIB               := calc
+LIB               := cdrom-player
 LIB_FILE          := ${LIBDIR}/lib${LIB}.a
 
 PROJ_DIR          := .
@@ -86,7 +86,8 @@ PROJ_OUTPUT       := ${PROJ_DIR}/${OUTPUT}
 PROJ_SENTINEL     := ${PROJ_OUTPUT}/.sentinel
 PROJ_CFLAGS       := ${CFLAGS_APP}
 PROJ_LDFLAGS      := ${LDFLAGS}
-PROJ              := calc
+PROJ              := cdrom-player
+
 PROJ_ELF_FILE     := ${PROJ_OUTPUT}/${PROJ}.elf
 PROJ_BIN_FILE     := ${PROJ_OUTPUT}/${PROJ}.bin
 PROJ_HEX_FILE     := ${PROJ_OUTPUT}/${PROJ}.hex
@@ -131,10 +132,10 @@ define compile_app
 endef
 
 #####################################
-all: calc
+all: cdrom-player
 .PHONY: all
 
-lib: calc
+lib: cdrom-player
 .PHONY: lib
 
 clean:
@@ -143,7 +144,7 @@ clean:
 
 
 #####################################
-# YR calc library
+# YR cdrom-player library
 # := static assigment
 # = dynamic assigment
 LIB_C_FILES       := ${SYSTEM_C} $(shell find ${LIB_SRC} -name '*.c')
@@ -198,7 +199,7 @@ ${PROJ_BIN_FILE}: ${PROJ_ELF_FILE}
 >	${RISCV_BINS}/${PREFIX}-objcopy -O ihex $< ${PROJ_HEX_FILE}
 
 
-calc: ${PROJ_BIN_FILE}
-.PHONY: calc
+cdrom-player: ${PROJ_BIN_FILE}
+.PHONY: cdrom-player
 
 # vim: expandtab: ts=4 sw=4 ft=yrmake:
