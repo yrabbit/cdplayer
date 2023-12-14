@@ -13,6 +13,15 @@
 //#define MCP23017_I2C_ADDR 0x26
 //#define MCP23017_I2C_ADDR 0x27
 
+// Registers
+#define MCP23017_IODIRA 0
+#define MCP23017_IODIRB 1
+#define MCP23017_IOCON  0xa
+
+// IOCON bit for disable sequential operations
+#define MCP23017_IOCON_SEQOP 0x20
+
+
 #define MCP23017_I2C_FREQ    48 // MHz
 #define MCP23017_I2C_DUTY33
 
@@ -52,11 +61,6 @@ void mcp23017_i2c_setup(void) {
     I2C1->CTLR1 |= I2C_CTLR1_ACK;
 }
 
-// event codes we use
-#define  MCP23017_I2C_EVENT_MASTER_MODE_SELECT ((uint32_t)0x00030001)  /* BUSY, MSL and SB flag */
-#define  MCP23017_I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED ((uint32_t)0x00070082)  /* BUSY, MSL, ADDR, TXE and TRA flags */
-#define  MCP23017_I2C_EVENT_MASTER_BYTE_TRANSMITTED ((uint32_t)0x00070084)  /* TRA, BUSY, MSL, TXE and BTF flags */
-
 /*
  * check for 32-bit event codes
  */
@@ -69,7 +73,8 @@ uint8_t mcp23017_i2c_chk_evt(uint32_t event_mask)
 
 void mcp23017_i2c_error(uint8_t err) {
 	static char const *err_str[] = {
-		"not busy", "master mode", "transmit mode", "tx empty", "transmit complete"
+		"not busy", "master mode", "transmit mode", "tx empty", "transmit complete",
+		"receive mode", "rx ready"
 	};
 
 	printf("mcp23017 i2c error - %s timeout\n\r", err_str[err]);
@@ -81,8 +86,8 @@ uint8_t mcp23017_i2c_send(uint8_t addr, uint8_t const *data, uint8_t sz)
 
     // wait for not busy
     timeout = TIMEOUT_MAX;
-    while((I2C1->STAR2 & I2C_STAR2_BUSY) && (--timeout));
-    if(timeout == -1) {
+    while ((I2C1->STAR2 & I2C_STAR2_BUSY) && (--timeout));
+    if (timeout == -1) {
         mcp23017_i2c_error(0);
 		return(1);
 	}
@@ -92,8 +97,8 @@ uint8_t mcp23017_i2c_send(uint8_t addr, uint8_t const *data, uint8_t sz)
 
     // wait for master mode select
     timeout = TIMEOUT_MAX;
-    while((!mcp23017_i2c_chk_evt(MCP23017_I2C_EVENT_MASTER_MODE_SELECT)) && (--timeout));
-    if(timeout == -1) {
+    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_MODE_SELECT)) && (--timeout));
+    if (timeout == -1) {
         mcp23017_i2c_error(1);
 		return(1);
 	}
@@ -103,8 +108,8 @@ uint8_t mcp23017_i2c_send(uint8_t addr, uint8_t const *data, uint8_t sz)
 
     // wait for transmit condition
     timeout = TIMEOUT_MAX;
-    while((!mcp23017_i2c_chk_evt(MCP23017_I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) && (--timeout));
-    if(timeout == -1) {
+    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) && (--timeout));
+    if (timeout == -1) {
         mcp23017_i2c_error(2);
 		return(1);
 	}
@@ -114,8 +119,8 @@ uint8_t mcp23017_i2c_send(uint8_t addr, uint8_t const *data, uint8_t sz)
     {
         // wait for TX Empty
         timeout = TIMEOUT_MAX;
-        while(!(I2C1->STAR1 & I2C_STAR1_TXE) && (--timeout));
-        if(timeout == -1) {
+        while (!(I2C1->STAR1 & I2C_STAR1_TXE) && (--timeout));
+        if (timeout == -1) {
             mcp23017_i2c_error(3);
 			return(1);
 		}
@@ -125,8 +130,8 @@ uint8_t mcp23017_i2c_send(uint8_t addr, uint8_t const *data, uint8_t sz)
     }
 	    // wait for tx complete
     timeout = TIMEOUT_MAX;
-    while((!mcp23017_i2c_chk_evt(MCP23017_I2C_EVENT_MASTER_BYTE_TRANSMITTED)) && (timeout--));
-    if(timeout == -1) {
+    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_BYTE_TRANSMITTED)) && (timeout--));
+    if (timeout == -1) {
         mcp23017_i2c_error(4);
 		return(1);
 	}
@@ -134,7 +139,68 @@ uint8_t mcp23017_i2c_send(uint8_t addr, uint8_t const *data, uint8_t sz)
     // set STOP condition
     I2C1->CTLR1 |= I2C_CTLR1_STOP;
 
-    return 0;
+    return(0);
+}
+
+uint8_t mcp23017_i2c_recv(uint8_t addr, uint8_t *data, uint8_t sz)
+{
+    int32_t timeout;
+
+    // wait for not busy
+    timeout = TIMEOUT_MAX;
+    while ((I2C1->STAR2 & I2C_STAR2_BUSY) && (--timeout));
+    if (timeout == -1) {
+        mcp23017_i2c_error(0);
+		return(1);
+	}
+
+    // Set START condition
+    I2C1->CTLR1 |= I2C_CTLR1_START;
+
+    // wait for master mode select
+    timeout = TIMEOUT_MAX;
+    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_MODE_SELECT)) && (--timeout));
+    if (timeout == -1) {
+        mcp23017_i2c_error(1);
+		return(1);
+	}
+
+    // send 7-bit address + read flag
+    I2C1->DATAR = (addr << 1) + 1;
+
+    // wait for receive condition
+    timeout = TIMEOUT_MAX;
+    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED )) && (--timeout));
+    if (timeout == -1) {
+        mcp23017_i2c_error(5);
+		return(1);
+	}
+
+	// receive data one byte at a time
+    while(sz--)
+    {
+        // wait for RX ready
+        timeout = TIMEOUT_MAX;
+        while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_BYTE_RECEIVED)) && (--timeout));
+        if (timeout == -1) {
+            mcp23017_i2c_error(6);
+			return(1);
+		}
+
+        // read byte
+        *data++ = I2C1->DATAR;
+    }
+
+    // set STOP condition
+    I2C1->CTLR1 |= I2C_CTLR1_STOP;
+
+    return(0);
+}
+
+// MCP23017 setup
+void mcp23017_init(uint8_t address) {
+	static uint8_t const noseq[] = {MCP23017_IOCON, MCP23017_IOCON_SEQOP};
+	mcp23017_i2c_send(address, noseq, sizeof(noseq));
 }
 
 #endif /* MCP23017_I2C_H */

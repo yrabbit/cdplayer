@@ -3,33 +3,75 @@
 #include <stdio.h>
 
 #include "mcp23017-i2c.h"
+#include "ide.h"
 
 int main()
 {
 	SystemInit();
 
-	printf("CFGR0:%lx\n\r", RCC->CFGR0);
 	mcp23017_i2c_setup();
-	uint8_t const all_out[] = {0, 0};
-	uint8_t neg_pins[] = {0x14, 0xff};
-	mcp23017_i2c_send(MCP23017_I2C_ADDR, all_out, 2);
+    mcp23017_init(MCP23017_I2C_ADDR);
+	ide_setup_pins();
 
+	uint8_t const all_out[] = {0, 0, 0};
+	uint8_t neg_pins[] = {0x12, 0xff, 0xff};
+	mcp23017_i2c_send(MCP23017_I2C_ADDR, all_out, sizeof(all_out));
 
+	ide_turn_pins_safe();
+
+	uint8_t input[2];
+	uint16_t in16;
+	while (1) {
+		mcp23017_i2c_send(MCP23017_I2C_ADDR, neg_pins, 1);
+		mcp23017_i2c_recv(MCP23017_I2C_ADDR, input, 2);
+		in16 = input[0] | (input[1] << 8);
+		printf("recv:%x\n\r", in16);
+	}
+	ide_turn_pins_safe();
+	/*
 	uint8_t bit = 1;
 	uint8_t dir = 1;
-	while (1) {
+	uint8_t cnt = 24;
+	while (--cnt) {
 		if (dir == 1) {
 			bit <<= 1;
 		} else {
 			bit >>= 1;
 		}
-		neg_pins[1] = (0xff - bit);
-		mcp23017_i2c_send(MCP23017_I2C_ADDR, neg_pins, 2);
+		neg_pins[1] = neg_pins[2] = (0xff - bit);
+		mcp23017_i2c_send(MCP23017_I2C_ADDR, neg_pins, sizeof(neg_pins));
 		Delay_Ms(250);
 		if (bit == 0x80 || bit == 1) {
 			dir = -dir;
 		}
+		// test nDIOW nDIOR
+		if (cnt & 1) {
+			ide_nDIOW_on();
+			ide_nDIOR_off();
+		} else {
+			ide_nDIOW_off();
+			ide_nDIOR_on();
+		}
 	}
+
+	ide_turn_pins_safe();
+	uint8_t input[2];
+	uint16_t in16;
+	while (1) {
+		mcp23017_i2c_recv(MCP23017_I2C_ADDR, input, 2);
+		in16 = input[0] | (input[1] << 8);
+		printf("recv:%x\n\r", in16);
+	}
+	ide_nDIOW_on();
+	ide_nDIOR_on();
+	Delay_Ms(1250);
+	ide_nDIOW_off();
+	ide_nDIOR_off();
+	Delay_Ms(1250);
+	ide_nDIOW_on();
+	ide_nDIOR_on();
+	ide_turn_pins_safe();
+	*/
 
 	/*
 	// two buttons D2 and D3
