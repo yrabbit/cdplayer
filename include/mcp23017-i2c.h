@@ -16,6 +16,7 @@
 // Registers
 #define MCP23017_IODIRA 0
 #define MCP23017_IODIRB 1
+#define MCP23017_GPIOA  0x12
 #define MCP23017_IOCON  0xa
 
 // IOCON bit for disable sequential operations
@@ -26,6 +27,9 @@
 #define MCP23017_I2C_DUTY33
 
 #define TIMEOUT_MAX 100000
+
+#define I2C_RESTART 0
+#define I2C_STOP    1
 
 void mcp23017_i2c_setup(void) {
     // Enable GPIOC and I2C
@@ -80,127 +84,95 @@ void mcp23017_i2c_error(uint8_t err) {
 	printf("mcp23017 i2c error - %s timeout\n\r", err_str[err]);
 }
 
-uint8_t mcp23017_i2c_send(uint8_t addr, uint8_t const *data, uint8_t sz)
-{
-    int32_t timeout;
-
-    // wait for not busy
-    timeout = TIMEOUT_MAX;
-    while ((I2C1->STAR2 & I2C_STAR2_BUSY) && (--timeout));
-    if (timeout == -1) {
-        mcp23017_i2c_error(0);
+// Write dev reg
+uint8_t mcp23017_i2c_send(uint16_t devAddr, uint16_t regAddr, uint8_t const *data, uint8_t sz) {
+	int32_t timeout;
+	// wait for not busy
+	timeout = TIMEOUT_MAX;
+	while((I2C1->STAR2 & I2C_STAR2_BUSY) && (timeout--));
+	if(timeout==-1) {
+		mcp23017_i2c_error(0);
 		return(1);
 	}
 
-    // Set START condition
-    I2C1->CTLR1 |= I2C_CTLR1_START;
-
-    // wait for master mode select
-    timeout = TIMEOUT_MAX;
-    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_MODE_SELECT)) && (--timeout));
-    if (timeout == -1) {
-        mcp23017_i2c_error(1);
+	// Set START condition
+	I2C1->CTLR1 |= I2C_CTLR1_START;
+	// wait for master mode select
+	while(!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_MODE_SELECT));
+	I2C1->DATAR = (devAddr<<1) & 0xFE;		// send 7-bit address + write flag
+	while((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) && (timeout--));
+	if(timeout==-1)	{
+		mcp23017_i2c_error(2);
 		return(1);
 	}
+	I2C1->DATAR = regAddr;
+	while(!(I2C1->STAR1 & I2C_STAR1_TXE));
 
-    // send 7-bit address + write flag
-    I2C1->DATAR = addr << 1;
-
-    // wait for transmit condition
-    timeout = TIMEOUT_MAX;
-    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) && (--timeout));
-    if (timeout == -1) {
-        mcp23017_i2c_error(2);
-		return(1);
+	while(sz--)
+	{
+		I2C1->DATAR = *data++;
+		while(!(I2C1->STAR1 & I2C_STAR1_TXE));
 	}
-
-    // send data one byte at a time
-    while(sz--)
-    {
-        // wait for TX Empty
-        timeout = TIMEOUT_MAX;
-        while (!(I2C1->STAR1 & I2C_STAR1_TXE) && (--timeout));
-        if (timeout == -1) {
-            mcp23017_i2c_error(3);
-			return(1);
-		}
-
-        // send command
-        I2C1->DATAR = *data++;
-    }
-	    // wait for tx complete
-    timeout = TIMEOUT_MAX;
-    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_BYTE_TRANSMITTED)) && (timeout--));
-    if (timeout == -1) {
-        mcp23017_i2c_error(4);
-		return(1);
-	}
-
-    // set STOP condition
-    I2C1->CTLR1 |= I2C_CTLR1_STOP;
-
-    return(0);
+	while(!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_BYTE_TRANSMITTED));
+	I2C1->CTLR1 |= I2C_CTLR1_STOP;	// set STOP condition
+	return(0);
 }
 
-uint8_t mcp23017_i2c_recv(uint8_t addr, uint8_t *data, uint8_t sz)
-{
-    int32_t timeout;
-
-    // wait for not busy
-    timeout = TIMEOUT_MAX;
-    while ((I2C1->STAR2 & I2C_STAR2_BUSY) && (--timeout));
-    if (timeout == -1) {
-        mcp23017_i2c_error(0);
+// Read dev reg
+uint8_t mcp23017_i2c_recv(uint16_t devAddr, uint16_t regAddr, uint8_t *data, uint8_t sz) {
+	int32_t timeout;
+	// wait for not busy
+	timeout = TIMEOUT_MAX;
+	while((I2C1->STAR2 & I2C_STAR2_BUSY) && (timeout--));
+	if(timeout == -1) {
+		mcp23017_i2c_error(0);
 		return(1);
 	}
-
-    // Set START condition
-    I2C1->CTLR1 |= I2C_CTLR1_START;
-
-    // wait for master mode select
-    timeout = TIMEOUT_MAX;
-    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_MODE_SELECT)) && (--timeout));
-    if (timeout == -1) {
-        mcp23017_i2c_error(1);
+	// Set START condition
+	I2C1->CTLR1 |= I2C_CTLR1_START;
+	// wait for master mode select
+	while(!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_MODE_SELECT));
+	I2C1->DATAR = (devAddr<<1) & 0xFE;		// send 7-bit address + write flag
+	timeout = TIMEOUT_MAX;		// wait for transmit condition
+	while((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) && (timeout--));
+	if(timeout == -1) {
+		mcp23017_i2c_error(1);
 		return(1);
 	}
+	I2C1->DATAR = regAddr;
+	while(!(I2C1->STAR1 & I2C_STAR1_TXE));
 
-    // send 7-bit address + read flag
-    I2C1->DATAR = (addr << 1) + 1;
-
-    // wait for receive condition
-    timeout = TIMEOUT_MAX;
-    while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED )) && (--timeout));
-    if (timeout == -1) {
-        mcp23017_i2c_error(5);
+	if (sz > 1) {
+		I2C1->CTLR1 |= I2C_CTLR1_ACK;
+	}
+	// Set repeat START condition
+	I2C1->CTLR1 |= I2C_CTLR1_START;
+	// wait for master mode select
+	while(!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_MODE_SELECT));
+	I2C1->DATAR = (devAddr<<1) | 0x01;			// send 7-bit address + read flag
+	timeout = TIMEOUT_MAX;		// wait for transmit condition
+	while((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED)) && (timeout--));
+	if(timeout == -1) {
+		mcp23017_i2c_error(5);
 		return(1);
 	}
-
-	// receive data one byte at a time
     while(sz--)
-    {
-        // wait for RX ready
-        timeout = TIMEOUT_MAX;
-        while ((!mcp23017_i2c_chk_evt(I2C_EVENT_MASTER_BYTE_RECEIVED)) && (--timeout));
-        if (timeout == -1) {
-            mcp23017_i2c_error(6);
-			return(1);
+	{
+		if (!sz) {
+			I2C1->CTLR1 &= ~I2C_CTLR1_ACK; //signal it's the last byte
 		}
-
-        // read byte
-        *data++ = I2C1->DATAR;
+		while(!(I2C1->STAR1 & I2C_STAR1_RXNE));
+		*data++ = I2C1->DATAR;
     }
-
-    // set STOP condition
-    I2C1->CTLR1 |= I2C_CTLR1_STOP;
-
-    return(0);
+	I2C1->CTLR1 |= I2C_CTLR1_STOP;	// set STOP condition
+	return(0);
 }
 
 // MCP23017 setup
 void mcp23017_init(uint8_t address) {
-	static uint8_t const noseq[] = {MCP23017_IOCON, MCP23017_IOCON_SEQOP};
-	mcp23017_i2c_send(address, noseq, sizeof(noseq));
+	static uint8_t const noseq[] = {MCP23017_IOCON_SEQOP};
+	mcp23017_i2c_send(address, MCP23017_IOCON, noseq, sizeof(noseq));
 }
+
 
 #endif /* MCP23017_I2C_H */
