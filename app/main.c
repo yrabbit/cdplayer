@@ -6,7 +6,7 @@
 #include "ide.h"
 
 
-atapi_device_information_t dev_info;
+//atapi_device_information_t dev_info;
 
 int main()
 {
@@ -21,13 +21,22 @@ int main()
 	uint16_t in16;
 	uint8_t status;
 
+	ide_select_device(0);
 	while (1) {
-		ide_select_device(0);
-
 		printf("Is ATAPI device:%d\n\r", is_atapi_device());
-		atapi_identify_packet_device(&dev_info);
-		printf("Model:%s\n\r", dev_info.model);
-		Delay_Ms(150);
+		atapi_identify_packet_device(/*&dev_info*/);
+		//printf("Model:%s\n\r", dev_info.model);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
+		Delay_Ms(850);
 	}
 	ide_turn_pins_safe();
 }

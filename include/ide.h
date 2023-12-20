@@ -13,21 +13,22 @@
 #define IDE_CS0   3 // PC3
 #define IDE_CS1   4 // PC4
 
-#define IDE_REG_DATA    0x00       //(CS1=0, CS0=1, DA=000)
-#define IDE_REG_ERROR   0x09	   //(CS1=0, CS0=1, DA=001)
-#define IDE_REG_CYLINDER_LOW  0x0c //(CS1=0, CS0=1, DA=100)
-#define IDE_REG_CYLINDER_HIGH 0x0d //(CS1=0, CS0=1, DA=101)
-#define IDE_REG_DEVICE  0x0e	   //(CS1=0, CS0=1, DA=110)
-#define IDE_REG_STATUS  0x0f	   //(CS1=0, CS0=1, DA=111)
-#define IDE_REG_COMMAND 0x0f	   //(CS1=0, CS0=1, DA=111)
-#define IDE_REG_ALT_STATUS 0x16    //(CS1=1, CS0=0, DA=110)
+#define IDE_REG_DATA    0x08       //(CS1=0, CS0=1, DA=000)    10
+#define IDE_REG_ERROR   0x09	   //(CS1=0, CS0=1, DA=001)    11
+#define IDE_REG_COI     0x0a	   //(CS1=0, CS0=1, DA=010)    12
+#define IDE_REG_CYLINDER_LOW  0x0c //(CS1=0, CS0=1, DA=100)    14
+#define IDE_REG_CYLINDER_HIGH 0x0d //(CS1=0, CS0=1, DA=101)    15
+#define IDE_REG_DEVICE  0x0e	   //(CS1=0, CS0=1, DA=110)    16
+#define IDE_REG_STATUS  0x0f	   //(CS1=0, CS0=1, DA=111)    17
+#define IDE_REG_COMMAND 0x0f	   //(CS1=0, CS0=1, DA=111)    17
+#define IDE_REG_ALT_STATUS 0x16    //(CS1=1, CS0=0, DA=110)    0e
 
 // ATAPI register aliases
 #define ATAPI_MAGIC_ID 0xEB14
-#define ATAPI_REG_FEATURE   0x09	  //(CS1=0, CS0=1, DA=001)
-#define ATAPI_REG_BYTECOUNT_LOW  0x0c //(CS1=0, CS0=1, DA=100)
-#define ATAPI_REG_BYTECOUNT_HIGH 0x0d //(CS1=0, CS0=1, DA=101)
-#define ATAPI_REG_COMMAND 0x0f	      //(CS1=0, CS0=1, DA=111)
+#define ATAPI_REG_FEATURE   0x09	  //(CS1=0, CS0=1, DA=001) 11
+#define ATAPI_REG_BYTECOUNT_LOW  0x0c //(CS1=0, CS0=1, DA=100) 14
+#define ATAPI_REG_BYTECOUNT_HIGH 0x0d //(CS1=0, CS0=1, DA=101) 15
+#define ATAPI_REG_COMMAND 0x0f	      //(CS1=0, CS0=1, DA=111) 17
 
 // DEVHEAD register
 #define IDE_REG_DEVICE_DEV 0x10
@@ -144,6 +145,7 @@ void ide_write(uint8_t reg, uint16_t data) {
 	ide_nDIOW_on();
 	Delay_Us(1);
 
+	ide_nDIOW_off();
 	ide_turn_pins_safe();
 	Delay_Us(1);
 }
@@ -205,11 +207,10 @@ uint8_t ide_wait_not_drq() {
 }
 
 void ide_select_device(uint8_t dev) {
-	ide_wait_not_drq();
 	if (dev) {
-		ide_write(IDE_REG_DEVICE, 0xff10);
+		ide_write(IDE_REG_DEVICE, 0xfff0);
 	} else {
-		ide_write(IDE_REG_DEVICE, 0xff00);
+		ide_write(IDE_REG_DEVICE, 0xffe0);
 	}
 }
 
@@ -243,6 +244,7 @@ void atapi_read_packet(uint8_t *data, uint16_t count) {
 	count >>= 1;
     for(uint16_t i = 0; i < count; ++i) {
 		if (ide_wait_drq()) {
+			printf("atapi_read_packet ide_wait_drq timeout\n\r");
 			return;
 		}
 		((uint16_t*)data)[i] = ide_read(IDE_REG_DATA);
@@ -253,6 +255,7 @@ void atapi_read_packet_skip(uint16_t count) {
 	count >>= 1;
     for(uint16_t i = 0; i < count; ++i) {
 		if (ide_wait_drq()) {
+			printf("atapi_read_packet_skip ide_wait_drq timeout\n\r");
 			return;
 		}
 		ide_read(IDE_REG_DATA);
@@ -264,9 +267,13 @@ void atapi_read_packet_string(char *data, uint16_t count) {
 	count >>= 1;
     for(uint16_t i = 0; i < count; ++i) {
 		if (ide_wait_drq()) {
+			printf("atapi_read_packet_string ide_wait_drq timeout\n\r");
 			return;
 		}
-		((uint16_t*)data)[i] = ide_read(IDE_REG_DATA);
+		uint16_t tmp = ide_read(IDE_REG_DATA);
+		data[i * 2 + 1] = tmp & 0xff;
+		tmp >>= 8;
+		data[i * 2] = tmp;
     }
 	data[len] = 0;
 }
@@ -287,33 +294,43 @@ typedef struct {
 	uint8_t pio_mode;
 } atapi_device_information_t;
 
-void atapi_identify_packet_device(atapi_device_information_t * info) {
+char model_number[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
+
+void atapi_identify_packet_device(/*atapi_device_information_t * info*/) {
 	ide_write(ATAPI_REG_FEATURE, 0xff00);
 	ide_write(ATAPI_REG_BYTECOUNT_LOW, 0xff00);
-	ide_write(ATAPI_REG_BYTECOUNT_HIGH, 0xff01);
+	ide_write(ATAPI_REG_BYTECOUNT_HIGH, 0xff02);
 	ide_write(ATAPI_REG_COMMAND, ATA_COMMAND_IDENTIFYPACKETDEVICE);
+
+	Delay_Ms(450);
 
 	uint16_t data = 0;
 
-	atapi_read_packet_word(&info->general_config);			// word 0: general configuration
-	/*
+	//atapi_read_packet_word(&info->general_config);			// word 0: general configuration
 	atapi_read_packet_skip(18);         					// words 1 to 9: reserved
-	atapi_read_packet_string(info->serial_number,
-		ATA_IDENTIFYPACKETDEVICE_SERIALNUMBER_LEN);         // words 10 to 19: serial number
+	//atapi_read_packet_string(info->serial_number,
+	//	ATA_IDENTIFYPACKETDEVICE_SERIALNUMBER_LEN);         // words 10 to 19: serial number
+	atapi_read_packet_skip(ATA_IDENTIFYPACKETDEVICE_SERIALNUMBER_LEN);
+
 	atapi_read_packet_skip(6);					            // words 20 to 22: reserved
-	atapi_read_packet_string(info->firmware_rev,
-		ATA_IDENTIFYPACKETDEVICE_FIRMWAREREVISION_LEN);     // words 23 to 26: firmware revision
-	atapi_read_packet_string(info->model,
+	//atapi_read_packet_string(info->firmware_rev,
+	//	ATA_IDENTIFYPACKETDEVICE_FIRMWAREREVISION_LEN);     // words 23 to 26: firmware revision
+	atapi_read_packet_skip(ATA_IDENTIFYPACKETDEVICE_FIRMWAREREVISION_LEN);
+
+	//atapi_read_packet_string(info->model,
+	//	ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN);          // words 27 to 46: model number
+	atapi_read_packet_string(model_number,
 		ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN);          // words 27 to 46: model number
+    printf("Model:%s\n\r", model_number);
 	atapi_read_packet_skip(4);                              // words 47 to 48: reserved
 	atapi_read_packet_word(&data);                          // word 49: capabilities
-	info->capabilities = data >> 8;
+	//info->capabilities = data >> 8;
 	atapi_read_packet_word_skip();                          // word 50: reserved
 	atapi_read_packet_word(&data);                          // word 51: PIO mode + vendor specific
-	info->pio_mode = data >> 8;
+	//info->pio_mode = data >> 8;
 	atapi_read_packet_word_skip();					        // word 52: reserved
-	atapi_read_packet_skip(406);				            // words 53 to 255: too lazy
-*/
+	atapi_read_packet_skip(406);				            // words 53 to 255:
+
 	//atapi_waitNoDataRequest();
 }
 #endif // IDE_H
