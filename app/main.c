@@ -6,7 +6,7 @@
 #include "ide.h"
 
 
-//atapi_device_information_t dev_info;
+char buf[100];
 
 int main()
 {
@@ -21,22 +21,39 @@ int main()
 	uint16_t in16;
 	uint8_t status;
 
+	ide_reset();
+	Delay_Ms(5000);
 	ide_select_device(0);
+	// self diagnostic
+	printf("Self diag:");
+	if (ide_selfdiag()) {
+		printf("Fail.\n\r");
+	} else {
+		printf("Good.\n\r");
+	}
+
+	// check packet size and get model
+	atapi_identify_packet_device(buf);
+	printf("Model:%s.\n\r", buf);
+	printf("Packet size (bytes):");
+	if (flags & FLAGS_16_BYTE_PACKET) {
+		printf("16.\n\r");
+	} else {
+		printf("12.\n\r");
+	}
+
+	unit_ready();
+	uint8_t sense = req_sense();
+	while (sense) {
+		Delay_Ms(50);
+		unit_ready();
+		sense = req_sense();
+	}
+
 	while (1) {
-		printf("Is ATAPI device:%d\n\r", is_atapi_device());
-		atapi_identify_packet_device(/*&dev_info*/);
-		//printf("Model:%s\n\r", dev_info.model);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
-		Delay_Ms(850);
+		uint8_t type = get_disk_type();
+		printf("disk type:%x\n\r", type);
+		Delay_Ms(800);
 	}
 	ide_turn_pins_safe();
 }

@@ -29,6 +29,7 @@
 #define ATAPI_REG_BYTECOUNT_LOW  0x0c //(CS1=0, CS0=1, DA=100) 14
 #define ATAPI_REG_BYTECOUNT_HIGH 0x0d //(CS1=0, CS0=1, DA=101) 15
 #define ATAPI_REG_COMMAND 0x0f	      //(CS1=0, CS0=1, DA=111) 17
+#define ATAPI_REG_CONTROL 0x16        //(CS1=1, CS0=0, DA=110) 0e
 
 // DEVHEAD register
 #define IDE_REG_DEVICE_DEV 0x10
@@ -37,7 +38,13 @@
 #define IDE_REG_STATUS_BUSY 0x80
 #define IDE_REG_STATUS_DRQ  0x08
 
-#define IDE_REG_COMMAND_DIAG 0x90
+// drive params
+uint8_t flags = 0;
+#define FLAGS_16_BYTE_PACKET 0x1 // PACKET 16 vs 12 bytes
+
+#define ATA_COMMAND_SELFDIAG             0x90
+#define ATA_COMMAND_PACKET               0xa0
+#define ATA_COMMAND_IDENTIFYPACKETDEVICE 0xa1
 
 // enable GPIO used
 void ide_setup_pins(void) {
@@ -64,6 +71,12 @@ void ide_setup_pins(void) {
 	GPIOD->CFGLR &= ~(0xf << (4 * IDE_DA2));
 	GPIOD->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP) << (4 * IDE_DA2);
 
+	// XXX reset GPIO D5
+#define IDE_RESET 6
+	GPIOD->CFGLR &= ~(0xf << (4 * IDE_RESET));
+	GPIOD->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP) << (4 * IDE_RESET);
+	GPIOD->OUTDR = GPIOD->OUTDR | (1 << IDE_RESET);
+
 	// GPIO C3
 	GPIOC->CFGLR &= ~(0xf << (4 * IDE_CS0));
 	GPIOC->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP) << (4 * IDE_CS0);
@@ -73,6 +86,12 @@ void ide_setup_pins(void) {
 	GPIOC->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP) << (4 * IDE_CS1);
 }
 
+void ide_reset(void) {
+	GPIOD->BSHR = (1 << (16 + IDE_RESET));
+	Delay_Ms(40);
+	GPIOD->BSHR = (1 << IDE_RESET);
+	Delay_Ms(20);
+}
 
 void ide_set_reg_addr(uint8_t reg) {
 	uint8_t tmp_reg;
@@ -214,9 +233,16 @@ void ide_select_device(uint8_t dev) {
 	}
 }
 
+// 0 - ok
+uint8_t ide_selfdiag(void) {
+	ide_write(ATAPI_REG_CONTROL, 0xff02); // disable INTRQ
+	ide_write(IDE_REG_COMMAND, ATA_COMMAND_SELFDIAG | 0xff00); // start diag
+	uint8_t err = ide_read(IDE_REG_ERROR);
+	return(err == 0x1 ? 0 : 1);
+}
 
 void ide_init(void) {
-	ide_write(IDE_REG_ALT_STATUS, 0xff02); // disable INTRQ
+	ide_write(ATAPI_REG_CONTROL, 0xff02); // disable INTRQ
 }
 
 // ATAPI
@@ -278,25 +304,27 @@ void atapi_read_packet_string(char *data, uint16_t count) {
 	data[len] = 0;
 }
 
+void atapi_write_packet(uint8_t const *data, uint16_t count) {
+	count >>= 1;
+	for(uint16_t i = 0; i < count ; ++i) {
+		if (ide_wait_drq()) {
+			printf("atapi_write_packet_ ide_wait_drq timeout\n\r");
+			return;
+		} else {
+			ide_write(IDE_REG_DATA, ((uint16_t*)data)[i] );
+		}
+	}
+}
+
 // device info answer
 #define ATA_IDENTIFYPACKETDEVICE_SERIALNUMBER_LEN 20
 #define ATA_IDENTIFYPACKETDEVICE_FIRMWAREREVISION_LEN 8
 #define ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN 40
 
-#define ATA_COMMAND_IDENTIFYPACKETDEVICE 0xa1
 
-typedef struct {
-	uint16_t general_config;
-	char serial_number[ATA_IDENTIFYPACKETDEVICE_SERIALNUMBER_LEN + 1];
-	char firmware_rev[ATA_IDENTIFYPACKETDEVICE_FIRMWAREREVISION_LEN + 1];
-	char model[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
-	uint8_t capabilities;
-	uint8_t pio_mode;
-} atapi_device_information_t;
+// char model_number[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
 
-char model_number[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
-
-void atapi_identify_packet_device(/*atapi_device_information_t * info*/) {
+void atapi_identify_packet_device(char *model_number) {
 	ide_write(ATAPI_REG_FEATURE, 0xff00);
 	ide_write(ATAPI_REG_BYTECOUNT_LOW, 0xff00);
 	ide_write(ATAPI_REG_BYTECOUNT_HIGH, 0xff02);
@@ -306,7 +334,10 @@ void atapi_identify_packet_device(/*atapi_device_information_t * info*/) {
 
 	uint16_t data = 0;
 
-	//atapi_read_packet_word(&info->general_config);			// word 0: general configuration
+	atapi_read_packet_word(&data);                          // word 0: general configuration
+	if ((data & 3) == 1) {
+		flags |= FLAGS_16_BYTE_PACKET;
+	}
 	atapi_read_packet_skip(18);         					// words 1 to 9: reserved
 	//atapi_read_packet_string(info->serial_number,
 	//	ATA_IDENTIFYPACKETDEVICE_SERIALNUMBER_LEN);         // words 10 to 19: serial number
@@ -319,9 +350,20 @@ void atapi_identify_packet_device(/*atapi_device_information_t * info*/) {
 
 	//atapi_read_packet_string(info->model,
 	//	ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN);          // words 27 to 46: model number
-	atapi_read_packet_string(model_number,
-		ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN);          // words 27 to 46: model number
-    printf("Model:%s\n\r", model_number);
+	if (model_number) {
+		atapi_read_packet_string(model_number,
+			ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN);      // words 27 to 46: model number
+		// fix model number tail
+		char *ptr = model_number + ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN;
+		while (--ptr != model_number) {
+			if (*ptr != 0x20 && *ptr <= 0x80) {
+				break;
+			}
+			*ptr = 0;
+		}
+	} else {
+		atapi_read_packet_skip(ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN);
+	}
 	atapi_read_packet_skip(4);                              // words 47 to 48: reserved
 	atapi_read_packet_word(&data);                          // word 49: capabilities
 	//info->capabilities = data >> 8;
@@ -331,6 +373,94 @@ void atapi_identify_packet_device(/*atapi_device_information_t * info*/) {
 	atapi_read_packet_word_skip();					        // word 52: reserved
 	atapi_read_packet_skip(406);				            // words 53 to 255:
 
-	//atapi_waitNoDataRequest();
+	ide_wait_not_drq();
 }
+
+uint8_t const cmds[]= {
+  0x1B,0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=0 Open tray
+  0x1B,0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=16 Close tray
+  0x1B,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=32 Stop unit
+  0x47,0x00,0x00,0x10,0x28,0x05,0x4C,0x1A,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=48 Start PLAY
+  0x4B,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=64 PAUSE play
+  0x4B,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=80 RESUME play
+  0x43,0x02,0x00,0x00,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=96 Read TOC
+  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=112 unit ready
+  0x5A,0x00,0x01,0x00,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=128 mode sense
+  0x42,0x02,0x40,0x01,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=144 rd subch.
+  0x03,0x00,0x00,0x00,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // idx=160 req. sense
+  0x4E,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00  // idx=176 Stop disk
+};
+
+#define CMD_OPEN_TRAY             (0 * 16)
+#define CMD_CLOSE_TRAY            (1 * 16)
+#define CMD_STOP_UNIT             (2 * 16)
+#define CMD_START_PLAY            (3 * 16)
+#define CMD_PAUSE_PLAY            (4 * 16)
+#define CMD_RESUME_PLAY           (5 * 16)
+#define CMD_READ_TOC              (6 * 16)
+#define CMD_UNIT_READY            (7 * 16)
+#define CMD_MODE_SENSE            (8 * 16)
+#define CMD_READ_SUBCH            (9 * 16)
+#define CMD_REQ_SENSE            (10 * 16)
+#define CMD_STOP_DISK            (11 * 16)
+
+void atapi_send_cmd(unsigned int cmd, uint16_t len) {
+	len += flags & FLAGS_16_BYTE_PACKET ? 16 : 12;
+	ide_write(ATAPI_REG_CONTROL, 0xff02); // disable INTRQ
+	ide_write(ATAPI_REG_FEATURE, 0xff00);
+	ide_write(ATAPI_REG_BYTECOUNT_LOW, len & 0xff);
+	ide_write(ATAPI_REG_BYTECOUNT_HIGH, len >> 8);
+	ide_write(ATAPI_REG_COMMAND, ATA_COMMAND_PACKET);
+	atapi_write_packet(&cmds[cmd], flags & FLAGS_16_BYTE_PACKET ? 16 : 12);
+
+	uint8_t status;
+	ide_wait_not_busy(&status);
+}
+
+// 0 - disk is OK
+uint8_t get_disk_type() {
+	atapi_send_cmd(CMD_MODE_SENSE, 0);
+	Delay_Ms(10);
+	ide_wait_drq();
+	ide_read(IDE_REG_DATA);
+	uint8_t type = ide_read(IDE_REG_DATA) & 0xff;
+
+	if (type == 0x02 || type == 0x06 || type == 0x12 || type == 0x16 || type == 0x22 || type == 0x26) {
+		type = 0;
+	}
+
+	uint8_t status;
+	do {
+		ide_read(IDE_REG_DATA);
+		ide_busy(&status);
+	} while(ide_drq(status));
+	return(type);
+}
+
+// next pair commands used to ask and check drive's condtion
+void unit_ready(void) {
+	atapi_send_cmd(CMD_UNIT_READY, 0);
+}
+
+uint8_t req_sense(void) {
+	atapi_send_cmd(CMD_REQ_SENSE, 0);
+	Delay_Ms(10);
+	ide_wait_drq();
+
+	uint8_t tmp, ret, status;
+	uint8_t cnt = 0;
+	do {
+		tmp = ide_read(IDE_REG_DATA);
+		printf("cnt:%d, tmp:%x\n\r", cnt, tmp);
+		if (cnt == 6) {
+			ret = tmp;
+		}
+		++cnt;
+		ide_read(IDE_REG_STATUS);
+		ide_read(IDE_REG_ALT_STATUS);
+		ide_busy(&status);
+	} while (ide_drq(status));
+	return(ret);
+}
+
 #endif // IDE_H
