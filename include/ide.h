@@ -451,7 +451,6 @@ uint8_t req_sense(void) {
 	uint8_t cnt = 0;
 	do {
 		tmp = ide_read(IDE_REG_DATA);
-		printf("cnt:%d, tmp:%x\n\r", cnt, tmp);
 		if (cnt == 6) {
 			ret = tmp;
 		}
@@ -461,6 +460,59 @@ uint8_t req_sense(void) {
 		ide_busy(&status);
 	} while (ide_drq(status));
 	return(ret);
+}
+
+// Table of contents
+void read_TOC(void){
+	uint8_t status;
+
+	ide_read(IDE_REG_DATA); // skip data length
+	uint16_t data = ide_read(IDE_REG_DATA);
+	printf("start:%x\n\r", data);
+	do {
+		ide_read(IDE_REG_DATA);
+		ide_busy(&status);
+	} while (ide_drq(status));
+	/*
+        readIDE(DataReg);                      // TOC Data Length not needed, don't care
+        readIDE(DataReg);                      // Read first and last session
+        s_trck = dataLval;
+        e_trck = dataHval;
+        do{
+           readIDE(DataReg);                   // Skip Session no. ADR and control fields
+           readIDE(DataReg);                   // Read curent track number
+           c_trck = dataLval;
+           readIDE(DataReg);                   // Read M
+           c_trck_m = dataHval;                // Store M of curent track
+           readIDE(DataReg);                   // Read S and F
+           c_trck_s = dataLval;                // Store S of current track
+           c_trck_f = dataHval;                // Store F of current track
+
+           if (c_trck == s_trck){              // Store MSF of first track
+               fnc[51] = c_trck_m;             //
+               fnc[52] = c_trck_s;
+               fnc[53] = c_trck_f;
+           }
+           if (c_trck == a_trck){              // Store MSF of actual track
+               d_trck_m = c_trck_m;            //
+               d_trck_s = c_trck_s;
+               d_trck_f = c_trck_f;
+           }
+           if (c_trck == 0xAA){                // Store MSF of end position
+               fnc[54] = c_trck_m;
+               fnc[55] = c_trck_s;
+               fnc[56] = c_trck_f;
+           }
+           readIDE(ComSReg);
+        } while(dataLval & (1<<3));            // Read data from DataRegister until DRQ=0
+		*/
+}
+
+void get_TOC(void) {
+	atapi_send_cmd(CMD_READ_TOC, 0);
+	Delay_Ms(10);
+	ide_wait_drq();
+	read_TOC();
 }
 
 #endif // IDE_H

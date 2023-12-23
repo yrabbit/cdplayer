@@ -52,8 +52,13 @@ int main()
 
 	while (1) {
 		uint8_t type = get_disk_type();
-		printf("disk type:%x\n\r", type);
-		Delay_Ms(800);
+		if (type != 1) {
+			printf("disk type:%x\n\r", type);
+			Delay_Ms(3000);
+			continue;
+		}
+		get_TOC();
+		Delay_Ms(5000);
 	}
 	ide_turn_pins_safe();
 }
