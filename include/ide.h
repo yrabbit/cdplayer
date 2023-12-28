@@ -1,6 +1,8 @@
 #ifndef IDE_H
 #define IDE_H
 
+#include <string.h>
+
 #include "mcp23017-i2c.h"
 
 #define IDE_TIMEOUT 600 // ms
@@ -46,6 +48,11 @@ uint8_t flags = 0;
 #define ATA_COMMAND_PACKET               0xa0
 #define ATA_COMMAND_IDENTIFYPACKETDEVICE 0xa1
 
+typedef struct __attribute__((packed)) {
+	uint8_t track; // track#
+	uint8_t m, s, f; // minute, second, frame
+} msf_t;
+
 // enable GPIO used
 void ide_setup_pins(void) {
 	// Enable GPIOs
@@ -72,10 +79,10 @@ void ide_setup_pins(void) {
 	GPIOD->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP) << (4 * IDE_DA2);
 
 	// XXX reset GPIO D5
-#define IDE_RESET 6
-	GPIOD->CFGLR &= ~(0xf << (4 * IDE_RESET));
-	GPIOD->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP) << (4 * IDE_RESET);
-	GPIOD->OUTDR = GPIOD->OUTDR | (1 << IDE_RESET);
+//#define IDE_RESET 6
+//	GPIOD->CFGLR &= ~(0xf << (4 * IDE_RESET));
+//	GPIOD->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_PP) << (4 * IDE_RESET);
+//	GPIOD->OUTDR = GPIOD->OUTDR | (1 << IDE_RESET);
 
 	// GPIO C3
 	GPIOC->CFGLR &= ~(0xf << (4 * IDE_CS0));
@@ -87,10 +94,10 @@ void ide_setup_pins(void) {
 }
 
 void ide_reset(void) {
-	GPIOD->BSHR = (1 << (16 + IDE_RESET));
+	GPIOC->BSHR = (1 << IDE_CS0) | (1 << IDE_CS1);
 	Delay_Ms(40);
-	GPIOD->BSHR = (1 << IDE_RESET);
-	Delay_Ms(20);
+	GPIOC->BSHR = (1 << (16 + IDE_CS0)) | (1 << (16 + IDE_CS1));
+	Delay_Ms(40);
 }
 
 void ide_set_reg_addr(uint8_t reg) {
@@ -231,6 +238,8 @@ void ide_select_device(uint8_t dev) {
 	} else {
 		ide_write(IDE_REG_DEVICE, 0xffe0);
 	}
+	ide_write(ATAPI_REG_BYTECOUNT_LOW, 0xff00);
+	ide_write(ATAPI_REG_BYTECOUNT_HIGH, 0xff02);
 }
 
 // 0 - ok
@@ -404,22 +413,36 @@ uint8_t const cmds[]= {
 #define CMD_REQ_SENSE            (10 * 16)
 #define CMD_STOP_DISK            (11 * 16)
 
-void atapi_send_cmd(unsigned int cmd, uint16_t len) {
-	len += flags & FLAGS_16_BYTE_PACKET ? 16 : 12;
+void atapi_send_cmd(uint8_t const *cmd) {
+	//len += flags & FLAGS_16_BYTE_PACKET ? 16 : 12;
 	ide_write(ATAPI_REG_CONTROL, 0xff02); // disable INTRQ
 	ide_write(ATAPI_REG_FEATURE, 0xff00);
-	ide_write(ATAPI_REG_BYTECOUNT_LOW, len & 0xff);
-	ide_write(ATAPI_REG_BYTECOUNT_HIGH, len >> 8);
 	ide_write(ATAPI_REG_COMMAND, ATA_COMMAND_PACKET);
-	atapi_write_packet(&cmds[cmd], flags & FLAGS_16_BYTE_PACKET ? 16 : 12);
+	atapi_write_packet(cmd, flags & FLAGS_16_BYTE_PACKET ? 16 : 12);
 
 	uint8_t status;
 	ide_wait_not_busy(&status);
 }
 
+void send_rom_cmd(unsigned int cmd) {
+	atapi_send_cmd(&cmds[cmd]);
+}
+
+// buf has at least 16 bytes
+void send_play_cmd(msf_t const *msf_play, msf_t const *msf_end, uint8_t *buf) {
+	memcpy(buf, &cmds[CMD_START_PLAY], 16);
+	buf[3] = msf_play->m;
+	buf[4] = msf_play->s;
+	buf[5] = msf_play->f;
+	buf[6] = msf_end->m;
+	buf[7] = msf_end->s;
+	buf[8] = msf_end->f;
+	atapi_send_cmd(buf);
+}
+
 // 0 - disk is OK
 uint8_t get_disk_type() {
-	atapi_send_cmd(CMD_MODE_SENSE, 0);
+	send_rom_cmd(CMD_MODE_SENSE);
 	Delay_Ms(10);
 	ide_wait_drq();
 	ide_read(IDE_REG_DATA);
@@ -439,11 +462,11 @@ uint8_t get_disk_type() {
 
 // next pair commands used to ask and check drive's condtion
 void unit_ready(void) {
-	atapi_send_cmd(CMD_UNIT_READY, 0);
+	send_rom_cmd(CMD_UNIT_READY);
 }
 
 uint8_t req_sense(void) {
-	atapi_send_cmd(CMD_REQ_SENSE, 0);
+	send_rom_cmd(CMD_REQ_SENSE);
 	Delay_Ms(10);
 	ide_wait_drq();
 
@@ -463,16 +486,48 @@ uint8_t req_sense(void) {
 }
 
 // Table of contents
+msf_t start_msf; // first track address
+msf_t end_msf;   // last track number but AFTER last track address
 void read_TOC(void){
 	uint8_t status;
+	msf_t curr_track;
+	uint8_t first_track;
 
-	ide_read(IDE_REG_DATA); // skip data length
 	uint16_t data = ide_read(IDE_REG_DATA);
-	printf("start:%x\n\r", data);
+	printf("First track#:%d\n\rLast track#:%d\n\r", data & 0xff, data >> 8);
+	first_track = data & 0xff;
+	end_msf.track = data >> 8;
+
 	do {
-		ide_read(IDE_REG_DATA);
+		uint16_t data = ide_read(IDE_REG_DATA);
+		data = ide_read(IDE_REG_DATA);
+		printf("track#:%d, ", data);
+		curr_track.track = data & 0xff;
+
+		data = ide_read(IDE_REG_DATA);
+		printf("m:%d, ", data >> 8);
+		curr_track.m = data >> 8;
+
+		data = ide_read(IDE_REG_DATA);
+		printf("s:%d f:%d\n\r", data & 0xff, data >> 8);
+		curr_track.s = data & 0xff;
+		curr_track.f = data >> 8;
+
+		if (curr_track.track == first_track) {
+			start_msf = curr_track;
+		}
+		if (curr_track.track == 0xAA) { // can't copy over track no
+			end_msf.m = curr_track.m;
+			end_msf.s = curr_track.s;
+			end_msf.f = curr_track.f;
+		}
+
 		ide_busy(&status);
 	} while (ide_drq(status));
+
+	printf("start_msf:%d %d:%d.%d\n\r", start_msf.track, start_msf.m, start_msf.s, start_msf.f);
+	printf("end_msf:%d %d:%d.%d\n\r", end_msf.track, end_msf.m, end_msf.s, end_msf.f);
+
 	/*
         readIDE(DataReg);                      // TOC Data Length not needed, don't care
         readIDE(DataReg);                      // Read first and last session
@@ -509,9 +564,17 @@ void read_TOC(void){
 }
 
 void get_TOC(void) {
-	atapi_send_cmd(CMD_READ_TOC, 0);
-	Delay_Ms(10);
-	ide_wait_drq();
+	while (1) {
+		send_rom_cmd(CMD_READ_TOC);
+		Delay_Ms(10);
+		ide_wait_drq();
+
+		uint16_t len = ide_read(IDE_REG_DATA); // data length
+		if (len) {
+			break;
+		}
+		printf("TOC length:%d\n\r", len);
+	}
 	read_TOC();
 }
 
