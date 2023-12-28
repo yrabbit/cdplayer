@@ -107,7 +107,7 @@ void ide_set_reg_addr(uint8_t reg) {
 	GPIOD->OUTDR = tmp_reg;
 	printf("reg:%x\n\r", reg);
 	/*
-	if (reg & IDE_CS0) {
+	if (reg & 8) {
 		GPIOC->BSHR = (1 << (16 + IDE_CS1)); // CS1->0 then CS0->1
         //Delay_Us(30);
 		GPIOC->BSHR = (1 << IDE_CS0);
