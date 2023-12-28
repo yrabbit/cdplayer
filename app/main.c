@@ -29,6 +29,20 @@ int main()
 		Delay_Ms(200);
 	}
 	*/
+	/*
+	uint8_t reg = IDE_CS1 << 3;
+	while(1) {
+		if (reg == IDE_CS1 << 3) {
+			reg = IDE_CS0 << 3;
+		} else {
+			reg = IDE_CS1 << 3;
+		}
+		printf("reg:%x\n\r", reg);
+		ide_set_reg_addr(reg);
+		ide_reset();
+		Delay_Ms(120);
+	}
+	*/
 
 	ide_reset();
 	Delay_Ms(6000);

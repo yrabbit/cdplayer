@@ -105,9 +105,21 @@ void ide_set_reg_addr(uint8_t reg) {
 	tmp_reg = GPIOD->OUTDR & ~((1 << IDE_DA0) | (1 << IDE_DA1) | (1 << IDE_DA2));
 	tmp_reg |= (reg & 7) << IDE_DA0;
 	GPIOD->OUTDR = tmp_reg;
-	tmp_reg = GPIOC->OUTDR & ~((1 << IDE_CS0) | (1 << IDE_CS1));
-	tmp_reg |= (((~reg) >> 3) & 3) << IDE_CS0;
-	GPIOC->OUTDR = tmp_reg;
+	printf("reg:%x\n\r", reg);
+	/*
+	if (reg & IDE_CS0) {
+		GPIOC->BSHR = (1 << (16 + IDE_CS1)); // CS1->0 then CS0->1
+        //Delay_Us(30);
+		GPIOC->BSHR = (1 << IDE_CS0);
+	} else {
+		GPIOC->BSHR = (1 << (16 + IDE_CS0)); // CS0->0 then CS1->1
+        //Delay_Us(30);
+		GPIOC->BSHR = (1 << IDE_CS1);
+	}
+	*/
+       tmp_reg = GPIOC->OUTDR & ~((1 << IDE_CS0) | (1 << IDE_CS1));
+       tmp_reg |= (((~reg) >> 3) & 3) << IDE_CS0;
+       GPIOC->OUTDR = tmp_reg;
 }
 
 // write/read pins
