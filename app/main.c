@@ -89,13 +89,9 @@ int main()
 	}
 	send_play_cmd(&start_msf, &end_msf, buf);
 	ide_turn_pins_safe();
-	cnt = 35;
 	while(1) {
 		Delay_Ms(60);
-		printf( "cnt:%d adc channels: %4d\n\r", cnt, adc_buffer[0]);
-		if (--cnt == 0) {
-			ide_reset();
-		}
+		printf( "adc channels: %4d %4d\n\r", adc_buffer[0], adc_buffer[1]);
 	}
 }
 
