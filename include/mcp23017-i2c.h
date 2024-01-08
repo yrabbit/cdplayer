@@ -171,6 +171,7 @@ uint8_t mcp23017_i2c_recv(uint16_t devAddr, uint16_t regAddr, uint8_t *data, uin
 // MCP23017 setup
 void mcp23017_init(uint8_t address) {
 	static uint8_t const noseq[] = {MCP23017_IOCON_SEQOP};
+	Delay_Ms(50);
 	mcp23017_i2c_send(address, MCP23017_IOCON, noseq, sizeof(noseq));
 }
 

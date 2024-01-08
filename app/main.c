@@ -4,6 +4,7 @@
 
 #include "mcp23017-i2c.h"
 #include "adc.h"
+#include "host-xface.h"
 #include "ide.h"
 
 uint8_t buf[100];
@@ -18,31 +19,10 @@ int main()
 	ide_turn_pins_safe();
 	ide_init();
 	adc_init();
+	host_xface_init();
 
 	uint16_t in16;
 	uint8_t status;
-
-
-	/*
-	while(1) {
-		ide_reset();
-		Delay_Ms(200);
-	}
-	*/
-	/*
-	uint8_t reg = IDE_CS1 << 3;
-	while(1) {
-		if (reg == IDE_CS1 << 3) {
-			reg = IDE_CS0 << 3;
-		} else {
-			reg = IDE_CS1 << 3;
-		}
-		printf("reg:%x\n\r", reg);
-		ide_set_reg_addr(reg);
-		ide_reset();
-		Delay_Ms(120);
-	}
-	*/
 
 	ide_reset();
 	Delay_Ms(6000);
@@ -87,11 +67,32 @@ int main()
 		Delay_Ms(5000);
 		break;
 	}
+	/*
 	send_play_cmd(&start_msf, &end_msf, buf);
 	ide_turn_pins_safe();
+	cnt = 100;
 	while(1) {
 		Delay_Ms(60);
-		printf( "adc channels: %4d %4d\n\r", adc_buffer[0], adc_buffer[1]);
+		printf( "cnt:%d, adc channels: %4d %4d\n\r", cnt, adc_buffer[0], adc_buffer[1]);
+		if (--cnt == 0) {
+			ide_reset();
+		}
+	}
+	*/
+	cnt = 7;
+	while (1) {
+		if (xfc_bits.ready) {
+			printf("in:%x\n\r", xfc_bits.in);
+			if (!(cnt--)) {
+				cnt = 7;
+				printf("========\n\r");
+			}
+			xfc_bits.ready = 0;
+		}
+		if (tim) {
+			tim = 0;
+			printf("woof!\n\r");
+		}
 	}
 }
 
