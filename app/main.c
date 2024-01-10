@@ -7,6 +7,9 @@
 #include "host-xface.h"
 #include "ide.h"
 
+char const version[] = "CD-PLAYER V1.0";
+char model[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
+
 uint8_t buf[100];
 
 int main()
@@ -37,8 +40,8 @@ int main()
 	}
 
 	// check packet size and get model
-	atapi_identify_packet_device((char*)buf);
-	printf("Model:%s.\n\r", buf);
+	atapi_identify_packet_device(model);
+	printf("Model:%s.\n\r", model);
 	printf("Packet size (bytes):");
 	if (flags & FLAGS_16_BYTE_PACKET) {
 		printf("16.\n\r");
@@ -62,9 +65,11 @@ int main()
 			Delay_Ms(3000);
 			continue;
 		}
+		/*
 		printf("get TOC\n\r");
 		get_TOC();
 		Delay_Ms(5000);
+		*/
 		break;
 	}
 	/*
@@ -79,19 +84,55 @@ int main()
 		}
 	}
 	*/
-	cnt = 7;
+	printf("===========\n\r");
 	while (1) {
-		if (xfc_bits.ready) {
-			printf("in:%x\n\r", xfc_bits.in);
-			if (!(cnt--)) {
-				cnt = 7;
-				printf("========\n\r");
-			}
-			xfc_bits.ready = 0;
+		if (!queue_empty(&xfc_data.in)) {
+			printf("in [%x] read:%lu, write:%lu\n\r", xfc_data.in.storage[xfc_data.in.read & 0x7f], xfc_data.in.read, xfc_data.in.write);
 		}
-		if (tim) {
-			tim = 0;
-			printf("woof!\n\r");
+		if (!queue_empty(&xfc_data.out)) {
+			printf("out [%x] read:%lu, write:%lu\n\r", xfc_data.out.storage[xfc_data.out.read & 0x7f], xfc_data.out.read, xfc_data.out.write);
+		}
+		// FSM
+		if (!queue_empty(&xfc_data.in)) {
+			uint8_t cmd = read_byte_from_queue(&xfc_data.in);
+			switch (cmd) {
+				case PROTO_CMD_RESET: {
+						printf("RESET\n\r");
+						uint8_t len = strlen(version);
+						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(len));
+						for (int i = 0; i < len; ++i) {
+							write_byte_to_queue(&xfc_data.out, version[i]);
+						}
+                    }
+					break;
+				case PROTO_CMD_GET_MODEL: {
+						printf("GET MODEL\n\r");
+						uint8_t len = strlen(model);
+						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(len));
+						for (int i = 0; i < len; ++i) {
+							write_byte_to_queue(&xfc_data.out, model[i]);
+						}
+				    }
+				    break;
+				case PROTO_CMD_EJECT: {
+						printf("EJECT\n\r");
+						uint8_t open_load = PROTO_EJECT_OPEN;
+						if (get_disk_type() == 0x71) {
+							open_load = PROTO_EJECT_LOAD;
+						}
+						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
+						write_byte_to_queue(&xfc_data.out, open_load);
+						if (open_load == PROTO_EJECT_OPEN) {
+							eject_disk();
+						} else {
+							load_disk();
+						}
+				    }
+				    break;
+				default:
+					printf("cmd:%x\n\r", cmd);
+					break;
+			}
 		}
 	}
 }

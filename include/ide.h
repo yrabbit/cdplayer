@@ -344,9 +344,6 @@ void atapi_write_packet(uint8_t const *data, uint16_t count) {
 #define ATA_IDENTIFYPACKETDEVICE_FIRMWAREREVISION_LEN 8
 #define ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN 40
 
-
-// char model_number[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
-
 void atapi_identify_packet_device(char *model_number) {
 	ide_write(ATAPI_REG_FEATURE, 0xff00);
 	ide_write(ATAPI_REG_BYTECOUNT_LOW, 0xff00);
@@ -464,6 +461,10 @@ uint8_t get_disk_type() {
 
 	if (type == 0x02 || type == 0x06 || type == 0x12 || type == 0x16 || type == 0x22 || type == 0x26) {
 		type = 0;
+	} else {
+		if (type != 0x71) { // some unknown disc
+			type = 0xff;
+		}
 	}
 
 	uint8_t status;
@@ -472,6 +473,14 @@ uint8_t get_disk_type() {
 		ide_busy(&status);
 	} while(ide_drq(status));
 	return(type);
+}
+
+void eject_disk(void) {
+	send_rom_cmd(CMD_OPEN_TRAY);
+}
+
+void load_disk(void) {
+	send_rom_cmd(CMD_CLOSE_TRAY);
 }
 
 // next pair commands used to ask and check drive's condtion

@@ -18,54 +18,140 @@
 // host uses inversion on external interface
 #define XFC_INV
 
-// bit sent and bit read
+// Protocol
+#define PROTO_CMD_NOP               0x00
+#define PROTO_CMD_RESET             0x01
+#define PROTO_CMD_GET_MODEL         0x02
+#define PROTO_CMD_EJECT             0x03
+
+#define PROTO_NO_PLAYER_DATA		0x00
+#define PROTO_HAS_DATA        		0x80
+
+// open/load during eject
+#define PROTO_EJECT_OPEN            ((uint8_t)'O')
+#define PROTO_EJECT_LOAD            ((uint8_t)'L')
+
+#define MAKE_ANSWER(len) (PROTO_HAS_DATA | len)
+
+// =========================================================================
+// IO queue
+#define IO_QUEUE_LEN  128  // 2^x only
+#define IO_QUEUE_MASK (IO_QUEUE_LEN - 1)
+typedef struct {
+	uint32_t read, write;
+	uint8_t storage[IO_QUEUE_LEN];
+} msg_queue_t;
+
+uint8_t read_byte_from_queue(volatile msg_queue_t * const q) {
+	return (q->storage[(q->read++) & IO_QUEUE_MASK]);
+}
+
+void write_byte_to_queue(volatile msg_queue_t * const q, uint8_t byte) {
+	q->storage[(q->write++) & IO_QUEUE_MASK] = byte;
+}
+
+void empty_queue(volatile msg_queue_t * const q) {
+	q->write = q->read;
+}
+
+int8_t queue_empty(volatile msg_queue_t * const q) {
+	return (q->read == q->write);
+}
+
+int8_t queue_full(volatile msg_queue_t * const q) {
+	return ((q->read & IO_QUEUE_MASK) == ((q->write + 1) & IO_QUEUE_MASK));
+}
+// =========================================================================
+
 volatile struct {
-	uint8_t ready : 1;
-	uint8_t out : 1;
-	uint8_t in : 1;
-} xfc_bits = {0, 0, 0};
+	uint8_t in_byte;  // host->player byte
+	uint8_t out_byte; // player->host byte
+	uint8_t bit_cnt;  // current bit
+	msg_queue_t in;
+	msg_queue_t out;
+} xfc_data = {0, 0, 0, {0, 0, {0}}, {0, 0, {0}}};
+
+void refill_xfc_out_data(void) {
+	if (queue_empty(&xfc_data.out)) {
+		xfc_data.out_byte = PROTO_NO_PLAYER_DATA;
+	} else {
+		xfc_data.out_byte = read_byte_from_queue(&xfc_data.out);
+	}
+}
+
+void reset_xfc_in_data(void) {
+	xfc_data.bit_cnt = 0;
+	empty_queue(&xfc_data.in);
+}
+
+void reset_xfc_out_data(void) {
+	xfc_data.out_byte = 0;
+	empty_queue(&xfc_data.out);
+}
 
 void EXTI7_0_IRQHandler(void) __attribute__((interrupt));
 void EXTI7_0_IRQHandler(void) {
-#ifdef XFC_INV
-	// read host bit
-	xfc_bits.in = 1 - ((GPIOC->INDR >> XFC_IN_PIN) & 1);
-	// send player bit
-	if (!xfc_bits.out) {
-#else
-	// read host bit
-	xfc_bits.in = (GPIOC->INDR >> XFC_IN_PIN) & 1;
-	// send player bit
-	if (xfc_bitx.out) {
-#endif
-			GPIOC->BSHR = (1 << XFC_OUT_PIN);
-	} else {
-			GPIOC->BSHR = 1 << (16 + XFC_OUT_PIN);
-	}
+	// reset "watchdog"
+	TIM2->CNT = 0;
+
+	uint8_t bit;
 	// falling edge
 #ifdef XFC_INV
 	if (GPIOC->INDR & (1 << XFC_CLK_PIN)) {
 #else
 	if (!(GPIOC->INDR & (1 << XFC_CLK_PIN))) {
 #endif
-		xfc_bits.ready = 1;
-	}
+		// next bit
+		if (++xfc_data.bit_cnt == 8) {
+			xfc_data.bit_cnt = 0;
+			refill_xfc_out_data();
+		}
 
+		bit = xfc_data.out_byte & 1;
+		xfc_data.out_byte >>= 1;
+
+#ifdef XFC_INV
+		// send player bit
+		if (!bit) {
+#else
+		// send player bit
+		if (bit) {
+#endif
+				GPIOC->BSHR = (1 << XFC_OUT_PIN);
+		} else {
+				GPIOC->BSHR = 1 << (16 + XFC_OUT_PIN);
+		}
+	} else {
+#ifdef XFC_INV
+		// read host bit
+		bit = 1 - ((GPIOC->INDR >> XFC_IN_PIN) & 1);
+#else
+		// read host bit
+		bit = (GPIOC->INDR >> XFC_IN_PIN) & 1;
+#endif
+		xfc_data.in_byte >>= 1;
+		xfc_data.in_byte  |= (bit << 7);
+		if (xfc_data.bit_cnt == 7) { // on rising edge - this allows fast cmd handle
+			write_byte_to_queue(&xfc_data.in, xfc_data.in_byte);
+		}
+	}
 	// clear the interrupt
 	EXTI->INTFR = 1 << XFC_CLK_PIN;
 }
 
-volatile uint16_t tim = 0;
+
 // "watchdog" timer
 void TIM2_IRQHandler(void) __attribute__((interrupt));
 void TIM2_IRQHandler(void) {
-	tim++;
+	// if timeout inside the byte or the host does not require data for a long time
+	if (xfc_data.bit_cnt || !queue_empty(&xfc_data.out)) {
+		reset_xfc_in_data();
+		reset_xfc_out_data();
+	}
 	TIM2->INTFR &= ~TIM_FLAG_Update;
 }
 
 void host_xface_init(void) {
-	 xfc_bits.ready = 0;
-
 	// set pin modes
 	RCC->APB2PCENR |= RCC_APB2Periph_GPIOC | RCC_APB2Periph_AFIO;
 	RCC->APB1PCENR |= RCC_APB1Periph_TIM2;
