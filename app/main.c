@@ -12,6 +12,10 @@ char model[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
 
 uint8_t buf[100];
 
+#define WAIT_FOR_CMD     0
+#define WAIT_FOR_TRACK_N 1
+uint8_t state = WAIT_FOR_CMD;
+
 int main()
 {
 	SystemInit();
@@ -65,13 +69,9 @@ int main()
 			Delay_Ms(3000);
 			continue;
 		}
-		/*
-		printf("get TOC\n\r");
-		get_TOC();
-		Delay_Ms(5000);
-		*/
 		break;
 	}
+	get_TOC();
 	/*
 	send_play_cmd(&start_msf, &end_msf, buf);
 	ide_turn_pins_safe();
@@ -94,61 +94,93 @@ int main()
 		}
 		// FSM
 		if (!queue_empty(&xfc_data.in)) {
-			uint8_t cmd = read_byte_from_queue(&xfc_data.in);
-			switch (cmd) {
-				case PROTO_CMD_RESET: {
-						printf("RESET\n\r");
-						uint8_t len = strlen(version);
-						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(len));
-						for (int i = 0; i < len; ++i) {
-							write_byte_to_queue(&xfc_data.out, version[i]);
+			switch (state) {
+				case WAIT_FOR_CMD: {
+					uint8_t cmd = read_byte_from_queue(&xfc_data.in);
+					switch (cmd) {
+						case PROTO_CMD_RESET: {
+								printf("RESET\n\r");
+								uint8_t len = strlen(version);
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(len));
+								for (int i = 0; i < len; ++i) {
+									write_byte_to_queue(&xfc_data.out, version[i]);
+								}
+							}
+							break;
+						case PROTO_CMD_GET_MODEL: {
+								printf("GET MODEL\n\r");
+								uint8_t len = strlen(model);
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(len));
+								for (int i = 0; i < len; ++i) {
+									write_byte_to_queue(&xfc_data.out, model[i]);
+								}
+							}
+							break;
+						case PROTO_CMD_EJECT: {
+								printf("EJECT\n\r");
+								uint8_t open_load = PROTO_EJECT_OPEN;
+								if (get_disk_type() == 0x71) {
+									open_load = PROTO_EJECT_LOAD;
+								}
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
+								write_byte_to_queue(&xfc_data.out, open_load);
+								if (open_load == PROTO_EJECT_OPEN) {
+									eject_disk();
+								} else {
+									load_disk();
+								}
+							}
+							break;
+						case PROTO_CMD_GET_DISK: {
+								printf("GET DISK\n\r");
+								uint8_t type;
+								switch (get_disk_type()) {
+									case 0x00:
+										type = PROTO_GET_DISK_AUDIO;
+										break;
+									case 0x71:
+										type = PROTO_GET_DISK_OPEN;
+										break;
+									default:
+										type = PROTO_GET_DISK_UNK;
+										break;
+								}
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
+								write_byte_to_queue(&xfc_data.out, type);
+							}
+							break;
+						case PROTO_CMD_GET_TRACK_CNT: {
+								printf("GET TRACK CNT\n\r");
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
+								write_byte_to_queue(&xfc_data.out, toc_len);
+							}
+							break;
+						case PROTO_CMD_GET_TRACK_DESC: {
+								state = WAIT_FOR_TRACK_N;
+							}
+							break;
+						default:
+							printf("cmd:%x\n\r", cmd);
+							break;
+					}
+				}
+				break;
+				case WAIT_FOR_TRACK_N: {
+						state = WAIT_FOR_CMD;
+						uint8_t track = read_byte_from_queue(&xfc_data.in);
+						printf("GET TRACK #%d DESC\n\r", track);
+						if (track >= toc_len) {
+							track = toc_len - 1;
 						}
-                    }
+						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(4));
+						write_byte_to_queue(&xfc_data.out, toc[track].track);
+						write_byte_to_queue(&xfc_data.out, toc[track].m);
+						write_byte_to_queue(&xfc_data.out, toc[track].s);
+						write_byte_to_queue(&xfc_data.out, toc[track].f);
+					}
 					break;
-				case PROTO_CMD_GET_MODEL: {
-						printf("GET MODEL\n\r");
-						uint8_t len = strlen(model);
-						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(len));
-						for (int i = 0; i < len; ++i) {
-							write_byte_to_queue(&xfc_data.out, model[i]);
-						}
-				    }
-				    break;
-				case PROTO_CMD_EJECT: {
-						printf("EJECT\n\r");
-						uint8_t open_load = PROTO_EJECT_OPEN;
-						if (get_disk_type() == 0x71) {
-							open_load = PROTO_EJECT_LOAD;
-						}
-						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
-						write_byte_to_queue(&xfc_data.out, open_load);
-						if (open_load == PROTO_EJECT_OPEN) {
-							eject_disk();
-						} else {
-							load_disk();
-						}
-				    }
-				    break;
-				case PROTO_CMD_GET_DISK: {
-						printf("GET DISK\n\r");
-						uint8_t type;
-						switch (get_disk_type()) {
-							case 0x00:
-								type = PROTO_GET_DISK_AUDIO;
-								break;
-							case 0x71:
-								type = PROTO_GET_DISK_OPEN;
-								break;
-							default:
-								type = PROTO_GET_DISK_UNK;
-								break;
-						}
-						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
-						write_byte_to_queue(&xfc_data.out, type);
-				    }
-				    break;
 				default:
-					printf("cmd:%x\n\r", cmd);
+					printf("UNK state:%d\n\r", state);
 					break;
 			}
 		}

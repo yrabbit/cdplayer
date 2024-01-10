@@ -509,47 +509,36 @@ uint8_t req_sense(void) {
 }
 
 // Table of contents
-msf_t start_msf; // first track address
-msf_t end_msf;   // last track number but AFTER last track address
+uint8_t toc_len = 0;
+msf_t toc[100];
+
 void read_TOC(void){
 	uint8_t status;
-	msf_t curr_track;
-	uint8_t first_track;
+	msf_t *curr_track;
 
 	uint16_t data = ide_read(IDE_REG_DATA);
 	printf("First track#:%d\n\rLast track#:%d\n\r", data & 0xff, data >> 8);
-	first_track = data & 0xff;
-	end_msf.track = data >> 8;
 
+	uint8_t idx = 0;
 	do {
+		curr_track = &toc[idx++];
 		uint16_t data = ide_read(IDE_REG_DATA);
 		data = ide_read(IDE_REG_DATA);
 		printf("track#:%d, ", data);
-		curr_track.track = data & 0xff;
+		curr_track->track = data & 0xff;
 
 		data = ide_read(IDE_REG_DATA);
 		printf("m:%d, ", data >> 8);
-		curr_track.m = data >> 8;
+		curr_track->m = data >> 8;
 
 		data = ide_read(IDE_REG_DATA);
 		printf("s:%d f:%d\n\r", data & 0xff, data >> 8);
-		curr_track.s = data & 0xff;
-		curr_track.f = data >> 8;
-
-		if (curr_track.track == first_track) {
-			start_msf = curr_track;
-		}
-		if (curr_track.track == 0xAA) { // can't copy over track no
-			end_msf.m = curr_track.m;
-			end_msf.s = curr_track.s;
-			end_msf.f = curr_track.f;
-		}
+		curr_track->s = data & 0xff;
+		curr_track->f = data >> 8;
 
 		ide_busy(&status);
 	} while (ide_drq(status));
-
-	printf("start_msf:%d %d:%d.%d\n\r", start_msf.track, start_msf.m, start_msf.s, start_msf.f);
-	printf("end_msf:%d %d:%d.%d\n\r", end_msf.track, end_msf.m, end_msf.s, end_msf.f);
+	toc_len = idx;
 
 	/*
         readIDE(DataReg);                      // TOC Data Length not needed, don't care

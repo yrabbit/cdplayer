@@ -24,6 +24,8 @@
 #define PROTO_CMD_GET_MODEL         0x02
 #define PROTO_CMD_EJECT             0x03
 #define PROTO_CMD_GET_DISK          0x04
+#define PROTO_CMD_GET_TRACK_CNT     0x05
+#define PROTO_CMD_GET_TRACK_DESC    0x06
 
 #define PROTO_NO_PLAYER_DATA		0x00
 #define PROTO_HAS_DATA        		0x80
