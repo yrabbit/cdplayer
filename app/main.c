@@ -10,11 +10,15 @@
 char const version[] = "CD-PLAYER V1.0";
 char model[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
 
-uint8_t buf[100];
+uint8_t cmd_buf[16];
 
-#define WAIT_FOR_CMD     0
-#define WAIT_FOR_TRACK_N 1
+#define WAIT_FOR_CMD              0
+#define WAIT_FOR_TRACK_N          1
+#define WAIT_FOR_PLAY_START_TRACK 2
+#define WAIT_FOR_PLAY_STOP_TRACK  3
+
 uint8_t state = WAIT_FOR_CMD;
+uint8_t start_track = 0;
 
 int main()
 {
@@ -159,6 +163,10 @@ int main()
 								state = WAIT_FOR_TRACK_N;
 							}
 							break;
+						case PROTO_CMD_PLAY_TRACK: {
+								state = WAIT_FOR_PLAY_START_TRACK;
+							}
+							break;
 						default:
 							printf("cmd:%x\n\r", cmd);
 							break;
@@ -177,6 +185,26 @@ int main()
 						write_byte_to_queue(&xfc_data.out, toc[track].m);
 						write_byte_to_queue(&xfc_data.out, toc[track].s);
 						write_byte_to_queue(&xfc_data.out, toc[track].f);
+					}
+					break;
+				case WAIT_FOR_PLAY_START_TRACK: {
+						state = WAIT_FOR_PLAY_STOP_TRACK;
+						start_track = read_byte_from_queue(&xfc_data.in);
+						printf("PLAY TRACK START#%d\n\r", start_track);
+						if (start_track >= toc_len) {
+							start_track = toc_len - 1;
+						}
+					}
+					break;
+				case WAIT_FOR_PLAY_STOP_TRACK: {
+						state = WAIT_FOR_CMD;
+						uint8_t track = read_byte_from_queue(&xfc_data.in);
+						printf("PLAY TRACK STOP#%d\n\r", track);
+						if (track >= toc_len) {
+							track = toc_len - 1;
+						}
+						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(0));
+						send_play_cmd(&toc[start_track], &toc[track], cmd_buf);
 					}
 					break;
 				default:
