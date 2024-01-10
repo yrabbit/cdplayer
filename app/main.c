@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 
+#define DEBUG
+
 #include "mcp23017-i2c.h"
 #include "adc.h"
 #include "host-xface.h"
@@ -40,15 +42,22 @@ int main()
 
 	ide_select_device(0);
 	// self diagnostic
+#ifdef DEBUG
 	printf("Self diag:");
+#endif
 	if (ide_selfdiag()) {
+#ifdef DEBUG
 		printf("Fail.\n\r");
+#endif
 	} else {
+#ifdef DEBUG
 		printf("Good.\n\r");
+#endif
 	}
 
 	// check packet size and get model
 	atapi_identify_packet_device(model);
+#ifdef DEBUG
 	printf("Model:%s.\n\r", model);
 	printf("Packet size (bytes):");
 	if (flags & FLAGS_16_BYTE_PACKET) {
@@ -56,6 +65,7 @@ int main()
 	} else {
 		printf("12.\n\r");
 	}
+#endif
 
 	unit_ready();
 	uint8_t sense = req_sense();
@@ -63,19 +73,27 @@ int main()
 		Delay_Ms(50);
 		unit_ready();
 		sense = req_sense();
+		#ifdef DEBUG
+		printf("sense:%x\n\r", sense);
+		#endif
+		if (sense == 0x3a) {
+			break;
+		}
 	}
 
 	int cnt = 4;
 	while (--cnt) {
 		uint8_t type = get_disk_type();
 		if (type != 0) {
+			#ifdef DEBUG
 			printf("disk type:%x\n\r", type);
-			Delay_Ms(3000);
+			Delay_Ms(2000);
+			#endif
 			continue;
 		}
+		get_TOC();
 		break;
 	}
-	get_TOC();
 	/*
 	send_play_cmd(&start_msf, &end_msf, buf);
 	ide_turn_pins_safe();
@@ -88,14 +106,18 @@ int main()
 		}
 	}
 	*/
+#ifdef DEBUG
 	printf("===========\n\r");
+#endif
 	while (1) {
+#ifdef DEBUG
 		if (!queue_empty(&xfc_data.in)) {
 			printf("in [%x] read:%lu, write:%lu\n\r", xfc_data.in.storage[xfc_data.in.read & 0x7f], xfc_data.in.read, xfc_data.in.write);
 		}
 		if (!queue_empty(&xfc_data.out)) {
 			printf("out [%x] read:%lu, write:%lu\n\r", xfc_data.out.storage[xfc_data.out.read & 0x7f], xfc_data.out.read, xfc_data.out.write);
 		}
+#endif
 		// FSM
 		if (!queue_empty(&xfc_data.in)) {
 			switch (state) {
@@ -103,7 +125,9 @@ int main()
 					uint8_t cmd = read_byte_from_queue(&xfc_data.in);
 					switch (cmd) {
 						case PROTO_CMD_RESET: {
+								#ifdef DEBUG
 								printf("RESET\n\r");
+								#endif
 								uint8_t len = strlen(version);
 								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(len));
 								for (int i = 0; i < len; ++i) {
@@ -112,7 +136,9 @@ int main()
 							}
 							break;
 						case PROTO_CMD_GET_MODEL: {
+								#ifdef DEBUG
 								printf("GET MODEL\n\r");
+								#endif
 								uint8_t len = strlen(model);
 								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(len));
 								for (int i = 0; i < len; ++i) {
@@ -121,7 +147,9 @@ int main()
 							}
 							break;
 						case PROTO_CMD_EJECT: {
+								#ifdef DEBUG
 								printf("EJECT\n\r");
+								#endif
 								uint8_t open_load = PROTO_EJECT_OPEN;
 								if (get_disk_type() == 0x71) {
 									open_load = PROTO_EJECT_LOAD;
@@ -136,7 +164,9 @@ int main()
 							}
 							break;
 						case PROTO_CMD_GET_DISK: {
+								#ifdef DEBUG
 								printf("GET DISK\n\r");
+								#endif
 								uint8_t type;
 								switch (get_disk_type()) {
 									case 0x00:
@@ -154,21 +184,63 @@ int main()
 							}
 							break;
 						case PROTO_CMD_GET_TRACK_CNT: {
+								#ifdef DEBUG
 								printf("GET TRACK CNT\n\r");
+								#endif
+								if (!toc_len) {
+									get_TOC();
+								}
 								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
 								write_byte_to_queue(&xfc_data.out, toc_len);
 							}
 							break;
+						case PROTO_CMD_GET_STATUS: {
+								#ifdef DEBUG
+								printf("GET STATUS\n\r");
+								#endif
+								uint8_t status = get_subch();
+								#ifdef DEBUG
+								printf("status:%d\n\r", status);
+								#endif
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(5));
+								write_byte_to_queue(&xfc_data.out, status);
+								write_byte_to_queue(&xfc_data.out, current_track.track);
+								write_byte_to_queue(&xfc_data.out, current_track.m);
+								write_byte_to_queue(&xfc_data.out, current_track.s);
+								write_byte_to_queue(&xfc_data.out, current_track.f);
+							}
+							break;
 						case PROTO_CMD_GET_TRACK_DESC: {
 								state = WAIT_FOR_TRACK_N;
+								if (!toc_len) {
+									get_TOC();
+								}
 							}
 							break;
 						case PROTO_CMD_PLAY_TRACK: {
 								state = WAIT_FOR_PLAY_START_TRACK;
 							}
 							break;
+						case PROTO_CMD_PAUSE_PLAY: {
+								#ifdef DEBUG
+								printf("PAUSE PLAY\n\r");
+								#endif
+								pause_play();
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(0));
+							}
+							break;
+						case PROTO_CMD_RESUME_PLAY: {
+								#ifdef DEBUG
+								printf("RESUME PLAY\n\r");
+								#endif
+								resume_play();
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(0));
+							}
+							break;
 						default:
+							#ifdef DEBUG
 							printf("cmd:%x\n\r", cmd);
+							#endif
 							break;
 					}
 				}
@@ -176,7 +248,9 @@ int main()
 				case WAIT_FOR_TRACK_N: {
 						state = WAIT_FOR_CMD;
 						uint8_t track = read_byte_from_queue(&xfc_data.in);
+						#ifdef DEBUG
 						printf("GET TRACK #%d DESC\n\r", track);
+						#endif
 						if (track >= toc_len) {
 							track = toc_len - 1;
 						}
@@ -190,7 +264,9 @@ int main()
 				case WAIT_FOR_PLAY_START_TRACK: {
 						state = WAIT_FOR_PLAY_STOP_TRACK;
 						start_track = read_byte_from_queue(&xfc_data.in);
+						#ifdef DEBUG
 						printf("PLAY TRACK START#%d\n\r", start_track);
+						#endif
 						if (start_track >= toc_len) {
 							start_track = toc_len - 1;
 						}
@@ -199,7 +275,9 @@ int main()
 				case WAIT_FOR_PLAY_STOP_TRACK: {
 						state = WAIT_FOR_CMD;
 						uint8_t track = read_byte_from_queue(&xfc_data.in);
+						#ifdef DEBUG
 						printf("PLAY TRACK STOP#%d\n\r", track);
+						#endif
 						if (track >= toc_len) {
 							track = toc_len - 1;
 						}
@@ -208,7 +286,9 @@ int main()
 					}
 					break;
 				default:
+					#ifdef DEBUG
 					printf("UNK state:%d\n\r", state);
+					#endif
 					break;
 			}
 		}

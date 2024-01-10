@@ -81,7 +81,9 @@ void mcp23017_i2c_error(uint8_t err) {
 		"receive mode", "rx ready"
 	};
 
+#ifdef DEBUG
 	printf("mcp23017 i2c error - %s timeout\n\r", err_str[err]);
+#endif
 }
 
 // Write dev reg

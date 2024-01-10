@@ -293,7 +293,9 @@ void atapi_read_packet(uint8_t *data, uint16_t count) {
 	count >>= 1;
     for(uint16_t i = 0; i < count; ++i) {
 		if (ide_wait_drq()) {
+			#ifdef DEBUG
 			printf("atapi_read_packet ide_wait_drq timeout\n\r");
+			#endif
 			return;
 		}
 		((uint16_t*)data)[i] = ide_read(IDE_REG_DATA);
@@ -304,7 +306,9 @@ void atapi_read_packet_skip(uint16_t count) {
 	count >>= 1;
     for(uint16_t i = 0; i < count; ++i) {
 		if (ide_wait_drq()) {
+			#ifdef DEBUG
 			printf("atapi_read_packet_skip ide_wait_drq timeout\n\r");
+			#endif
 			return;
 		}
 		ide_read(IDE_REG_DATA);
@@ -316,7 +320,9 @@ void atapi_read_packet_string(char *data, uint16_t count) {
 	count >>= 1;
     for(uint16_t i = 0; i < count; ++i) {
 		if (ide_wait_drq()) {
+			#ifdef DEBUG
 			printf("atapi_read_packet_string ide_wait_drq timeout\n\r");
+			#endif
 			return;
 		}
 		uint16_t tmp = ide_read(IDE_REG_DATA);
@@ -331,7 +337,9 @@ void atapi_write_packet(uint8_t const *data, uint16_t count) {
 	count >>= 1;
 	for(uint16_t i = 0; i < count ; ++i) {
 		if (ide_wait_drq()) {
+			#ifdef DEBUG
 			printf("atapi_write_packet_ ide_wait_drq timeout\n\r");
+			#endif
 			return;
 		} else {
 			ide_write(IDE_REG_DATA, ((uint16_t*)data)[i] );
@@ -475,13 +483,6 @@ uint8_t get_disk_type() {
 	return(type);
 }
 
-void eject_disk(void) {
-	send_rom_cmd(CMD_OPEN_TRAY);
-}
-
-void load_disk(void) {
-	send_rom_cmd(CMD_CLOSE_TRAY);
-}
 
 // next pair commands used to ask and check drive's condtion
 void unit_ready(void) {
@@ -508,6 +509,7 @@ uint8_t req_sense(void) {
 	return(ret);
 }
 
+
 // Table of contents
 uint8_t toc_len = 0;
 msf_t toc[100];
@@ -517,62 +519,36 @@ void read_TOC(void){
 	msf_t *curr_track;
 
 	uint16_t data = ide_read(IDE_REG_DATA);
+	#ifdef DEBUG
 	printf("First track#:%d\n\rLast track#:%d\n\r", data & 0xff, data >> 8);
+	#endif
 
 	uint8_t idx = 0;
 	do {
 		curr_track = &toc[idx++];
 		uint16_t data = ide_read(IDE_REG_DATA);
 		data = ide_read(IDE_REG_DATA);
+		#ifdef DEBUG
 		printf("track#:%d, ", data);
+		#endif
 		curr_track->track = data & 0xff;
 
 		data = ide_read(IDE_REG_DATA);
+		#ifdef DEBUG
 		printf("m:%d, ", data >> 8);
+		#endif
 		curr_track->m = data >> 8;
 
 		data = ide_read(IDE_REG_DATA);
+		#ifdef DEBUG
 		printf("s:%d f:%d\n\r", data & 0xff, data >> 8);
+		#endif
 		curr_track->s = data & 0xff;
 		curr_track->f = data >> 8;
 
 		ide_busy(&status);
 	} while (ide_drq(status));
 	toc_len = idx;
-
-	/*
-        readIDE(DataReg);                      // TOC Data Length not needed, don't care
-        readIDE(DataReg);                      // Read first and last session
-        s_trck = dataLval;
-        e_trck = dataHval;
-        do{
-           readIDE(DataReg);                   // Skip Session no. ADR and control fields
-           readIDE(DataReg);                   // Read curent track number
-           c_trck = dataLval;
-           readIDE(DataReg);                   // Read M
-           c_trck_m = dataHval;                // Store M of curent track
-           readIDE(DataReg);                   // Read S and F
-           c_trck_s = dataLval;                // Store S of current track
-           c_trck_f = dataHval;                // Store F of current track
-
-           if (c_trck == s_trck){              // Store MSF of first track
-               fnc[51] = c_trck_m;             //
-               fnc[52] = c_trck_s;
-               fnc[53] = c_trck_f;
-           }
-           if (c_trck == a_trck){              // Store MSF of actual track
-               d_trck_m = c_trck_m;            //
-               d_trck_s = c_trck_s;
-               d_trck_f = c_trck_f;
-           }
-           if (c_trck == 0xAA){                // Store MSF of end position
-               fnc[54] = c_trck_m;
-               fnc[55] = c_trck_s;
-               fnc[56] = c_trck_f;
-           }
-           readIDE(ComSReg);
-        } while(dataLval & (1<<3));            // Read data from DataRegister until DRQ=0
-		*/
 }
 
 void get_TOC(void) {
@@ -585,9 +561,71 @@ void get_TOC(void) {
 		if (len) {
 			break;
 		}
+		#ifdef DEBUG
 		printf("TOC length:%d\n\r", len);
+		#endif
 	}
 	read_TOC();
+}
+
+void eject_disk(void) {
+	send_rom_cmd(CMD_OPEN_TRAY);
+	toc_len = 0;
+}
+
+void load_disk(void) {
+	send_rom_cmd(CMD_CLOSE_TRAY);
+	toc_len = 0;
+}
+
+void pause_play(void) {
+	send_rom_cmd(CMD_PAUSE_PLAY);
+}
+
+void resume_play(void) {
+	send_rom_cmd(CMD_RESUME_PLAY);
+}
+
+// get audio status
+msf_t current_track = {0};
+uint8_t get_subch(void) {
+	send_rom_cmd(CMD_READ_SUBCH);
+	// status
+	uint16_t data = ide_read(IDE_REG_DATA);
+	data >>= 8;
+	if (data == 0x13) { // completed play == stopped
+		data = 0x15;
+	}
+	uint8_t audio_status = 0; // no disk
+	if (data == 0x11 || data == 0x12 || data == 0x15) { // playing, paused or stopped
+		audio_status = data;
+	}
+	#ifdef DEBUG
+	printf("Status:%x\n\r", audio_status);
+	#endif
+	ide_read(IDE_REG_DATA); // skip subchannel data length
+	ide_read(IDE_REG_DATA); // skip format code, adr and control
+	data = ide_read(IDE_REG_DATA); // get track
+	current_track.track = data & 0xff;
+	data = ide_read(IDE_REG_DATA); // get m
+	current_track.m = data >> 8;
+	data = ide_read(IDE_REG_DATA); // get s/f
+	current_track.s = data & 0xff;
+	current_track.f = data >> 8;
+	#ifdef DEBUG
+	printf("Cur track:%d, m:%d, s:%d, f:%d\n\r", current_track.track, current_track.m, current_track.s, current_track.f);
+	#endif
+	uint8_t status;
+	do {
+		ide_read(IDE_REG_DATA);
+		ide_busy(&status);
+	} while (ide_drq(status));
+	// reread TOC
+	if (audio_status == 0x15 && !toc_len) {
+		get_TOC();
+		return (get_subch());
+	}
+	return (audio_status);
 }
 
 #endif // IDE_H
