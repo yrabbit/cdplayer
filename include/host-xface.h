@@ -23,6 +23,7 @@
 #define PROTO_CMD_RESET             0x01
 #define PROTO_CMD_GET_MODEL         0x02
 #define PROTO_CMD_EJECT             0x03
+#define PROTO_CMD_GET_DISK          0x04
 
 #define PROTO_NO_PLAYER_DATA		0x00
 #define PROTO_HAS_DATA        		0x80
@@ -30,6 +31,14 @@
 // open/load during eject
 #define PROTO_EJECT_OPEN            ((uint8_t)'O')
 #define PROTO_EJECT_LOAD            ((uint8_t)'L')
+
+// disk status
+#define PROTO_GET_DISK_AUDIO        ((uint8_t)'A')
+#define PROTO_GET_DISK_OPEN         ((uint8_t)'O')
+#define PROTO_GET_DISK_UNK          ((uint8_t)'U')
+
+// audio status
+
 
 #define MAKE_ANSWER(len) (PROTO_HAS_DATA | len)
 

@@ -129,6 +129,24 @@ int main()
 						}
 				    }
 				    break;
+				case PROTO_CMD_GET_DISK: {
+						printf("GET DISK\n\r");
+						uint8_t type;
+						switch (get_disk_type()) {
+							case 0x00:
+								type = PROTO_GET_DISK_AUDIO;
+								break;
+							case 0x71:
+								type = PROTO_GET_DISK_OPEN;
+								break;
+							default:
+								type = PROTO_GET_DISK_UNK;
+								break;
+						}
+						write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
+						write_byte_to_queue(&xfc_data.out, type);
+				    }
+				    break;
 				default:
 					printf("cmd:%x\n\r", cmd);
 					break;
