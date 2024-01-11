@@ -34,9 +34,6 @@ int main()
 	adc_init();
 	host_xface_init();
 
-	uint16_t in16;
-	uint8_t status;
-
 	ide_reset();
 	Delay_Ms(6000);
 
@@ -235,6 +232,45 @@ int main()
 								#endif
 								resume_play();
 								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(0));
+							}
+							break;
+						case PROTO_CMD_STOP_PLAY: {
+								#ifdef DEBUG
+								printf("STOP PLAY\n\r");
+								#endif
+								stop_play();
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(0));
+							}
+							break;
+						case PROTO_CMD_NEXT: {
+								#ifdef DEBUG
+								printf("NEXT\n\r");
+								#endif
+								uint8_t track = find_next_track();
+								if (track != 0xff) {
+									send_play_cmd(&toc[track], &toc[toc_len - 1], cmd_buf);
+								}
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(0));
+							}
+							break;
+						case PROTO_CMD_PREV: {
+								#ifdef DEBUG
+								printf("PREV\n\r");
+								#endif
+								uint8_t track = find_prev_track();
+								if (track != 0xff) {
+									send_play_cmd(&toc[track], &toc[toc_len - 1], cmd_buf);
+								}
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(0));
+							}
+							break;
+						case PROTO_CMD_GET_LEVEL: {
+								#ifdef DEBUG
+								printf("GET LEVEL\n\r");
+								#endif
+								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(2));
+								write_byte_to_queue(&xfc_data.out, adc_buffer[0]);
+								write_byte_to_queue(&xfc_data.out, adc_buffer[1]);
 							}
 							break;
 						default:

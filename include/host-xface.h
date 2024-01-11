@@ -30,6 +30,10 @@
 #define PROTO_CMD_GET_STATUS        0x08
 #define PROTO_CMD_PAUSE_PLAY        0x09
 #define PROTO_CMD_RESUME_PLAY       0x0a
+#define PROTO_CMD_STOP_PLAY         0x0b
+#define PROTO_CMD_NEXT              0x0c
+#define PROTO_CMD_PREV              0x0d
+#define PROTO_CMD_GET_LEVEL         0x0e
 
 #define PROTO_NO_PLAYER_DATA		0x00
 #define PROTO_HAS_DATA        		0x80
@@ -96,7 +100,6 @@ void refill_xfc_out_data(void) {
 
 void reset_xfc_in_data(void) {
 	xfc_data.bit_cnt = 0;
-	empty_queue(&xfc_data.in);
 }
 
 void reset_xfc_out_data(void) {

@@ -586,6 +586,11 @@ void resume_play(void) {
 	send_rom_cmd(CMD_RESUME_PLAY);
 }
 
+void stop_play(void) {
+	send_rom_cmd(CMD_STOP_DISK);
+	send_rom_cmd(CMD_STOP_UNIT);
+}
+
 // get audio status
 msf_t current_track = {0};
 uint8_t get_subch(void) {
@@ -628,4 +633,35 @@ uint8_t get_subch(void) {
 	return (audio_status);
 }
 
+uint8_t find_next_track(void) {
+	if (!toc_len) {
+		return (0xff);
+	}
+
+	for (int i = 0; i < toc_len; ++i) {
+		if (toc[i].track == current_track.track) {
+			return (i + 1 == toc_len - 1 ? 0 : i + 1);
+		}
+	}
+	#ifdef DEBUG
+	printf("Error during find next\n\e");
+	#endif
+	return (0xff);
+}
+
+uint8_t find_prev_track(void) {
+	if (!toc_len) {
+		return (0xff);
+	}
+
+	for (int i = 0; i < toc_len; ++i) {
+		if (toc[i].track == current_track.track) {
+			return (i - 1 == 0 ? toc_len - 2 : i - 1);
+		}
+	}
+	#ifdef DEBUG
+	printf("Error during find prev\n\e");
+	#endif
+	return (0xff);
+}
 #endif // IDE_H
