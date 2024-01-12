@@ -26,13 +26,13 @@ int main()
 {
 	SystemInit();
 
+	host_xface_init();
 	mcp23017_i2c_setup();
     mcp23017_init(MCP23017_I2C_ADDR);
 	ide_setup_pins();
 	ide_turn_pins_safe();
 	ide_init();
 	adc_init();
-	host_xface_init();
 
 	ide_reset();
 	Delay_Ms(6000);
