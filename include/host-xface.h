@@ -107,51 +107,61 @@ void reset_xfc_out_data(void) {
 	empty_queue(&xfc_data.out);
 }
 
+__attribute__((__always_inline__)) void send_out_bit(uint8_t bit) {
+#ifdef XFC_INV
+	if (!bit) {
+#else
+	if (bit) {
+#endif
+			GPIOC->BSHR = (1 << XFC_OUT_PIN);
+	} else {
+			GPIOC->BSHR = 1 << (16 + XFC_OUT_PIN);
+	}
+}
+
+__attribute__((__always_inline__)) uint8_t read_clk(void) {
+#ifdef XFC_INV
+	return (!(GPIOC->INDR & (1 << XFC_CLK_PIN)));
+#else
+	return (GPIOC->INDR & (1 << XFC_CLK_PIN));
+#endif
+}
+
+__attribute__((__always_inline__)) uint8_t read_in_bit(void) {
+#ifdef XFC_INV
+	return (1 - ((GPIOC->INDR >> XFC_IN_PIN) & 1));
+#else
+	return ((GPIOC->INDR >> XFC_IN_PIN) & 1);
+#endif
+}
+
+uint32_t start_tick;
 void EXTI7_0_IRQHandler(void) __attribute__((interrupt));
 void EXTI7_0_IRQHandler(void) {
 	// reset "watchdog"
 	TIM2->CNT = 0;
+	static uint8_t host_bit;
 
-	uint8_t bit;
 	// falling edge
-#ifdef XFC_INV
-	if (GPIOC->INDR & (1 << XFC_CLK_PIN)) {
-#else
-	if (!(GPIOC->INDR & (1 << XFC_CLK_PIN))) {
-#endif
-		// next bit
-		if (++xfc_data.bit_cnt == 8) {
-			xfc_data.bit_cnt = 0;
-			refill_xfc_out_data();
-		}
+	if (!read_clk()) {
+		// skip if very shot CLK pulse
+		uint32_t d = SysTick->CNT - start_tick;
+		if (d > Ticks_from_Us(10U) && d < Ticks_from_Ms(50U)) {
+			xfc_data.in_byte >>= 1;
+			xfc_data.in_byte  |= (host_bit << 7);
+			// next bit
+			if (++xfc_data.bit_cnt == 8) {
+				write_byte_to_queue(&xfc_data.in, xfc_data.in_byte);
+				xfc_data.bit_cnt = 0;
+				refill_xfc_out_data();
+			}
 
-		bit = xfc_data.out_byte & 1;
-		xfc_data.out_byte >>= 1;
-
-#ifdef XFC_INV
-		// send player bit
-		if (!bit) {
-#else
-		// send player bit
-		if (bit) {
-#endif
-				GPIOC->BSHR = (1 << XFC_OUT_PIN);
-		} else {
-				GPIOC->BSHR = 1 << (16 + XFC_OUT_PIN);
+			send_out_bit(xfc_data.out_byte & 1);
+			xfc_data.out_byte >>= 1;
 		}
-	} else {
-#ifdef XFC_INV
-		// read host bit
-		bit = 1 - ((GPIOC->INDR >> XFC_IN_PIN) & 1);
-#else
-		// read host bit
-		bit = (GPIOC->INDR >> XFC_IN_PIN) & 1;
-#endif
-		xfc_data.in_byte >>= 1;
-		xfc_data.in_byte  |= (bit << 7);
-		if (xfc_data.bit_cnt == 7) { // on rising edge - this allows fast cmd handle
-			write_byte_to_queue(&xfc_data.in, xfc_data.in_byte);
-		}
+	} else { // riging edge
+		start_tick = SysTick->CNT;
+		host_bit = read_in_bit();
 	}
 	// clear the interrupt
 	EXTI->INTFR = 1 << XFC_CLK_PIN;
@@ -170,6 +180,8 @@ void TIM2_IRQHandler(void) {
 }
 
 void host_xface_init(void) {
+	start_tick = SysTick->CNT;
+
 	// set pin modes
 	RCC->APB2PCENR |= RCC_APB2Periph_GPIOC | RCC_APB2Periph_AFIO;
 	RCC->APB1PCENR |= RCC_APB1Periph_TIM2;
