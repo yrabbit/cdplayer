@@ -30,11 +30,20 @@ delay:
 	; Задержка при посылке одного бита
 	; определяет скорость обмена
 	; портит: -
+
 xfcdly:	
-	mov r0,-(sp)
-	mov #5,r0
-	sob r0,.
-	mov (sp)+,r0
+	call 0delay
+	call 0delay
+	call 0delay
+0delay:
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
 	rts pc
 
 	; --------

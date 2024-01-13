@@ -204,13 +204,12 @@ int main()
 							}
 							break;
 						case PROTO_CMD_GET_TRACK_INFO: {
+								wait_for_parameter = 1;
 								state = WAIT_FOR_TRACK_N;
-								if (!toc_len) {
-									get_TOC();
-								}
 							}
 							break;
 						case PROTO_CMD_PLAY_TRACK: {
+								wait_for_parameter = 1;
 								state = WAIT_FOR_PLAY_START_TRACK;
 							}
 							break;
@@ -284,9 +283,13 @@ int main()
 				case WAIT_FOR_TRACK_N: {
 						state = WAIT_FOR_CMD;
 						uint8_t track = read_byte_from_queue(&xfc_data.in);
+						wait_for_parameter = 0;
 						#ifdef DEBUG
 						//printf("GET TRACK #%d DESC\n\r", track);
 						#endif
+						if (!toc_len) {
+							get_TOC();
+						}
 						if (track >= toc_len) {
 							track = toc_len - 1;
 						}
@@ -300,6 +303,7 @@ int main()
 				case WAIT_FOR_PLAY_START_TRACK: {
 						state = WAIT_FOR_PLAY_STOP_TRACK;
 						start_track = read_byte_from_queue(&xfc_data.in);
+						wait_for_parameter = 0;
 						#ifdef DEBUG
 						printf("PLAY TRACK START#%d\n\r", start_track);
 						#endif

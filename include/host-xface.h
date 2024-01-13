@@ -54,6 +54,8 @@
 
 // =========================================================================
 // IO queue
+// wait for parameter - in this mode PROTO_CMD_NOP not ignored but stored in queue
+uint8_t wait_for_parameter = 0;
 #define IO_QUEUE_LEN  128  // 2^x only
 #define IO_QUEUE_MASK (IO_QUEUE_LEN - 1)
 typedef struct {
@@ -100,6 +102,7 @@ void refill_xfc_out_data(void) {
 
 void reset_xfc_in_data(void) {
 	xfc_data.bit_cnt = 0;
+	wait_for_parameter = 0;
 }
 
 void reset_xfc_out_data(void) {
@@ -151,7 +154,11 @@ void EXTI7_0_IRQHandler(void) {
 			xfc_data.in_byte  |= (host_bit << 7);
 			// next bit
 			if (++xfc_data.bit_cnt == 8) {
-				write_byte_to_queue(&xfc_data.in, xfc_data.in_byte);
+				// store NOP only if there is output data or we waiting for parameter
+				if (xfc_data.in_byte != PROTO_CMD_NOP || (xfc_data.in_byte == PROTO_CMD_NOP &&
+							(wait_for_parameter || (!queue_empty(&xfc_data.out))))) {
+					write_byte_to_queue(&xfc_data.in, xfc_data.in_byte);
+				}
 				xfc_data.bit_cnt = 0;
 				refill_xfc_out_data();
 			}
