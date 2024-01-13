@@ -24,6 +24,9 @@ uint8_t start_track = 0;
 
 int main()
 {
+#ifdef DEBUG
+	int nop_cnt = 0;
+#endif
 	SystemInit();
 
 	host_xface_init();
@@ -95,9 +98,11 @@ int main()
 	printf("===========\n\r");
 #endif
 	while (1) {
-#ifdef DEBUG
+#ifdef DEBUG0
 		if (!queue_empty(&xfc_data.in)) {
-			printf("in [%x] read:%lu, write:%lu\n\r", xfc_data.in.storage[xfc_data.in.read & 0x7f], xfc_data.in.read, xfc_data.in.write);
+			if (xfc_data.in.storage[xfc_data.in.read & 0x7f]) {
+				printf("in [%x] read:%lu, write:%lu\n\r", xfc_data.in.storage[xfc_data.in.read & 0x7f], xfc_data.in.read, xfc_data.in.write);
+			}
 		}
 		if (!queue_empty(&xfc_data.out)) {
 			printf("out [%x] read:%lu, write:%lu\n\r", xfc_data.out.storage[xfc_data.out.read & 0x7f], xfc_data.out.read, xfc_data.out.write);
@@ -132,9 +137,6 @@ int main()
 							}
 							break;
 						case PROTO_CMD_EJECT: {
-								#ifdef DEBUG
-								printf("EJECT\n\r");
-								#endif
 								uint8_t open_load = PROTO_EJECT_OPEN;
 								if (get_disk_type() == 0x71) {
 									open_load = PROTO_EJECT_LOAD;
@@ -142,8 +144,14 @@ int main()
 								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(1));
 								write_byte_to_queue(&xfc_data.out, open_load);
 								if (open_load == PROTO_EJECT_OPEN) {
+									#ifdef DEBUG
+									printf("EJECT eject\n\r");
+									#endif
 									eject_disk();
 								} else {
+									#ifdef DEBUG
+									printf("EJECT load\n\r");
+									#endif
 									load_disk();
 								}
 							}
@@ -195,7 +203,7 @@ int main()
 								write_byte_to_queue(&xfc_data.out, current_track.f);
 							}
 							break;
-						case PROTO_CMD_GET_TRACK_DESC: {
+						case PROTO_CMD_GET_TRACK_INFO: {
 								state = WAIT_FOR_TRACK_N;
 								if (!toc_len) {
 									get_TOC();
@@ -263,7 +271,11 @@ int main()
 							break;
 						default:
 							#ifdef DEBUG
-							printf("cmd:%x\n\r", cmd);
+							//printf("cmd:%x\n\r", cmd);
+							if (++nop_cnt == 1000) {
+								nop_cnt = 0;
+								printf("NOP\n\r");
+							}
 							#endif
 							break;
 					}
@@ -273,7 +285,7 @@ int main()
 						state = WAIT_FOR_CMD;
 						uint8_t track = read_byte_from_queue(&xfc_data.in);
 						#ifdef DEBUG
-						printf("GET TRACK #%d DESC\n\r", track);
+						//printf("GET TRACK #%d DESC\n\r", track);
 						#endif
 						if (track >= toc_len) {
 							track = toc_len - 1;

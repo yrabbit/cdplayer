@@ -520,7 +520,7 @@ void read_TOC(void){
 
 	uint16_t data = ide_read(IDE_REG_DATA);
 	#ifdef DEBUG
-	printf("First track#:%d\n\rLast track#:%d\n\r", data & 0xff, data >> 8);
+	//printf("First track#:%d\n\rLast track#:%d\n\r", data & 0xff, data >> 8);
 	#endif
 
 	uint8_t idx = 0;
@@ -529,19 +529,19 @@ void read_TOC(void){
 		uint16_t data = ide_read(IDE_REG_DATA);
 		data = ide_read(IDE_REG_DATA);
 		#ifdef DEBUG
-		printf("track#:%d, ", data);
+		//printf("track#:%d, ", data);
 		#endif
 		curr_track->track = data & 0xff;
 
 		data = ide_read(IDE_REG_DATA);
 		#ifdef DEBUG
-		printf("m:%d, ", data >> 8);
+		//printf("m:%d, ", data >> 8);
 		#endif
 		curr_track->m = data >> 8;
 
 		data = ide_read(IDE_REG_DATA);
 		#ifdef DEBUG
-		printf("s:%d f:%d\n\r", data & 0xff, data >> 8);
+		//printf("s:%d f:%d\n\r", data & 0xff, data >> 8);
 		#endif
 		curr_track->s = data & 0xff;
 		curr_track->f = data >> 8;
@@ -562,7 +562,7 @@ void get_TOC(void) {
 			break;
 		}
 		#ifdef DEBUG
-		printf("TOC length:%d\n\r", len);
+		//printf("TOC length:%d\n\r", len);
 		#endif
 	}
 	read_TOC();
@@ -606,7 +606,7 @@ uint8_t get_subch(void) {
 		audio_status = data;
 	}
 	#ifdef DEBUG
-	printf("Status:%x\n\r", audio_status);
+	//printf("Status:%x\n\r", audio_status);
 	#endif
 	ide_read(IDE_REG_DATA); // skip subchannel data length
 	ide_read(IDE_REG_DATA); // skip format code, adr and control
@@ -618,7 +618,7 @@ uint8_t get_subch(void) {
 	current_track.s = data & 0xff;
 	current_track.f = data >> 8;
 	#ifdef DEBUG
-	printf("Cur track:%d, m:%d, s:%d, f:%d\n\r", current_track.track, current_track.m, current_track.s, current_track.f);
+	//printf("Cur track:%d, m:%d, s:%d, f:%d\n\r", current_track.track, current_track.m, current_track.s, current_track.f);
 	#endif
 	uint8_t status;
 	do {

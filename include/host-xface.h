@@ -25,7 +25,7 @@
 #define PROTO_CMD_EJECT             0x03
 #define PROTO_CMD_GET_DISK          0x04
 #define PROTO_CMD_GET_TRACK_CNT     0x05
-#define PROTO_CMD_GET_TRACK_DESC    0x06
+#define PROTO_CMD_GET_TRACK_INFO    0x06
 #define PROTO_CMD_PLAY_TRACK        0x07
 #define PROTO_CMD_GET_STATUS        0x08
 #define PROTO_CMD_PAUSE_PLAY        0x09
