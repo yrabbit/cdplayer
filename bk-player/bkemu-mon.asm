@@ -31,13 +31,17 @@ delay:
 	; определяет скорость обмена
 	; должна сохранять Z
 	; портит: -
-xfcdly:	
+xfcdl0:	
 	nop
 	nop
 	nop
 	nop
 	nop
 	rts pc
+
+xfcdly:
+	call xfcdl0
+	br xfcdl0
 
 	; --------
 	; Посылка/передача одного бита
@@ -51,7 +55,7 @@ bitrw:
 	beq 1out0               ; оставляем C = 0 потому что плеер передал 0
 	sec                     ; плеер передал 1
 1out0:	
-	 call xfcdly			; держим часы 1
+	call xfcdly			    ; держим часы 1
 	mov #0,@#177714			; держим бит для передачи = 0, но часы = 0
 	br 0exit
 1clk:
@@ -61,10 +65,10 @@ bitrw:
 	bne 1out1					; оставляем C = 1 потому что плеер передал 1
 	clc							; плеер передал 0
 1out1:	
-	 call xfcdly				; держим часы 1
+	call xfcdly				; держим часы 1
 	mov #INMSK,@#177714			; держим бит для передачи = 1, но часы = 0
 0exit:
-	 call xfcdly				; держим часы 0
+	call xfcdly				    ; держим часы 0
 	rts pc
 
 	; --------
@@ -75,7 +79,7 @@ sendb:
 	mov #8.,r1
 0loop:
 	rorb r0
-	 call bitrw
+	call bitrw
 	sob r1, 0loop
 	rts pc
 
@@ -88,7 +92,7 @@ recvb:
 	mov #8.,r1
 1loop:
 	clc						; приём байт происходит подачей команды CMD_NOP плееру
-	 call bitrw
+	call bitrw
 	rorb r0
 	sob r1, 1loop
 	rts pc
@@ -120,7 +124,7 @@ buf=4000
 	; ничего на самом деле не делает, но возвращает строку с версией прошивки.
 	; Хороший кандидат для проверки функционирования связи с плеером.
 	; Длина возвращаемой строки не больше 40 символов. 
-crst:
+creset:
 	; послать команду CMD_RESET
 	mov #1,r0
 	call  sendb
@@ -131,14 +135,39 @@ crst:
 	; будем писать строку ответа в buf
 	mov #buf,r3
 	mov r0,r2
-3loop:	
+0crst:	
 	call recvb
 	movb r0,(r3)+
-	sob r2,3loop
-	; завканчивает строку нулевым байтом
+	sob r2,0crst
+	; заканчиваем строку нулевым байтом
 	clrb (r3)
 	; вывести строку из buf на экран
-	; print (buf)
+	mov #buf,r0
+	mov #2,r5
+	call print
+	rts pc
+	; -------------------------------------------------------------------
+	; CMD_GET_MODEL, код 2
+	; возвращает строку с названием модели привода CDROM.
+	; Длина возвращаемой строки не больше 40 символов. 
+cmodel:
+	; послать команду CMD_GET_MODEL
+	mov #2,r0
+	call  sendb
+	; прочитать длину ответа
+	call getlen
+	tst r0
+	beq err
+	; будем писать строку ответа в buf
+	mov #buf,r3
+	mov r0,r2
+0cmdl:	
+	call recvb
+	movb r0,(r3)+
+	sob r2,0cmdl
+	; заканчиваем строку нулевым байтом
+	clrb (r3)
+	; вывести строку из buf на экран
 	mov #buf,r0
 	mov #2,r5
 	call print
@@ -159,7 +188,7 @@ main:
 	; Обязательно. Небольшая задержка чтобы плеер успел приготовиться
 	; даже если таймер сработает на второй раз это не имеет значения.
 	mov #STARTDL,r0
-	 call delay
+	call delay
 	mov #0, @#177714
 
 	; ============
@@ -172,7 +201,8 @@ main:
 	sob r1, 2loop
 
 	; тест CMD_RESET
-	call crst
+	call creset
+	call cmodel
 	br .
 	.END
 
