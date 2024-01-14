@@ -257,13 +257,15 @@ int main()
 								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(0));
 							}
 							break;
-						case PROTO_CMD_GET_LEVEL: {
+						case PROTO_CMD_AUDIO: {
 								#ifdef DEBUG
-								printf("GET LEVEL\n\r");
+								printf("GET AUDIO\n\r");
 								#endif
 								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(2));
-								write_byte_to_queue(&xfc_data.out, adc_buffer[0]);
-								write_byte_to_queue(&xfc_data.out, adc_buffer[1]);
+								uint16_t level = adc_buffer[0];
+								write_byte_to_queue(&xfc_data.out, level > 255 ? 255 : level);
+								level = adc_buffer[1];
+								write_byte_to_queue(&xfc_data.out, level > 255 ? 255 : level);
 							}
 							break;
 						default:
