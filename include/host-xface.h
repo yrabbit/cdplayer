@@ -19,7 +19,7 @@
 #define XFC_INV
 
 // Protocol
-#define PROTO_CMD_NOP               0x00
+#define PROTO_CMD_NOP               0xff
 #define PROTO_CMD_RESET             0x01
 #define PROTO_CMD_GET_MODEL         0x02
 #define PROTO_CMD_EJECT             0x03
@@ -47,15 +47,11 @@
 #define PROTO_GET_DISK_OPEN         ((uint8_t)'O')
 #define PROTO_GET_DISK_UNK          ((uint8_t)'U')
 
-// audio status
-
-
 #define MAKE_ANSWER(len) (PROTO_HAS_DATA | len)
 
 // =========================================================================
 // IO queue
-// wait for parameter - in this mode PROTO_CMD_NOP not ignored but stored in queue
-uint8_t wait_for_parameter = 0;
+// PROTO_CMD_NOP if there is no output data
 #define IO_QUEUE_LEN  128  // 2^x only
 #define IO_QUEUE_MASK (IO_QUEUE_LEN - 1)
 typedef struct {
@@ -102,7 +98,6 @@ void refill_xfc_out_data(void) {
 
 void reset_xfc_in_data(void) {
 	xfc_data.bit_cnt = 0;
-	wait_for_parameter = 0;
 }
 
 void reset_xfc_out_data(void) {
@@ -155,8 +150,7 @@ void EXTI7_0_IRQHandler(void) {
 			// next bit
 			if (++xfc_data.bit_cnt == 8) {
 				// store NOP only if there is output data or we waiting for parameter
-				if (xfc_data.in_byte != PROTO_CMD_NOP || (xfc_data.in_byte == PROTO_CMD_NOP &&
-							(wait_for_parameter || (!queue_empty(&xfc_data.out))))) {
+				if (xfc_data.in_byte != PROTO_CMD_NOP) {
 					write_byte_to_queue(&xfc_data.in, xfc_data.in_byte);
 				}
 				xfc_data.bit_cnt = 0;
