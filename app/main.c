@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 
-#define DEBUG
+//#define DEBUG
 
 #include "mcp23017-i2c.h"
 #include "adc.h"
@@ -123,6 +123,7 @@ int main()
 								for (int i = 0; i < len; ++i) {
 									write_byte_to_queue(&xfc_data.out, version[i]);
 								}
+								get_TOC();
 							}
 							break;
 						case PROTO_CMD_GET_MODEL: {
@@ -305,6 +306,9 @@ int main()
 						#ifdef DEBUG
 						printf("PLAY TRACK START#%d\n\r", start_track);
 						#endif
+						if (!toc_len) {
+							get_TOC();
+						}
 						if (start_track >= toc_len) {
 							start_track = toc_len - 1;
 						}

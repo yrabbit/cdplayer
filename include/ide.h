@@ -588,6 +588,7 @@ void resume_play(void) {
 
 void stop_play(void) {
 	send_rom_cmd(CMD_STOP_DISK);
+	toc_len = 0;
 	send_rom_cmd(CMD_STOP_UNIT);
 }
 
