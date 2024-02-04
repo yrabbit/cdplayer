@@ -9,7 +9,7 @@
 #include "host-xface.h"
 #include "ide.h"
 
-char const version[] = "CD-PLAYER V1.0";
+char const version[] = "CD-PLAYER V1.2";
 char model[ATA_IDENTIFYPACKETDEVICE_MODELNUMBER_LEN + 1];
 
 uint8_t cmd_buf[16];
@@ -264,9 +264,12 @@ int main()
 								#endif
 								write_byte_to_queue(&xfc_data.out, MAKE_ANSWER(2));
 								uint16_t level = adc_buffer[0];
-								write_byte_to_queue(&xfc_data.out, level > 255 ? 255 : level);
+								write_byte_to_queue(&xfc_data.out, level & 0xff);
+								write_byte_to_queue(&xfc_data.out, level >> 8);
+								/*
 								level = adc_buffer[1];
 								write_byte_to_queue(&xfc_data.out, level > 255 ? 255 : level);
+								*/
 							}
 							break;
 						default:
