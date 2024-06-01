@@ -607,6 +607,10 @@ main:
 	mov ltrack,r1
 	call cmplay
 	call cmstat
-	br .
+
+5loop:
+	call del2s
+	call cmstat
+	br 5loop
 	.END
 
