@@ -609,8 +609,9 @@ main:
 	call cmstat
 
 5loop:
-	call del2s
-	call cmstat
+	mov #STARTDL/4,r0
+	call delay
+	call cmaud
 	br 5loop
 	.END
 
