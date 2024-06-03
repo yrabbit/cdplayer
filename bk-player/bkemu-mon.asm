@@ -233,6 +233,9 @@ cmejct:
 	;  O - лоток открыт
 	; Может использоваться для вывода надписи 'NO DISK', а также для проверки
 	; открылся ли лоток после подачи команды CMD_EJECT
+	; здесь возвращает R0 = 0 лоток закрыт, аудио диск
+	;                  R0 = 1 лоток закрыт, неизвестный диск
+	;                  R0 = -1 лоток открыт
 austr:	.asciz 'AUDIO CD'	
 opestr:	.asciz 'Tray is open'
 nodstr: .asciz 'NO DISK'
@@ -261,6 +264,11 @@ cmgdsk:
 	rts pc
 2gdisk:	
 	mov #nodstr,r0
+	; вывести строку из buf на экран
+	mov #2,r5
+	call print
+	mov #1, r0
+	rts pc
 1gdisk:
 	; вывести строку из buf на экран
 	mov #2,r5
@@ -535,11 +543,16 @@ main:
 	call del1s
 	call cmgdsk ; проверяем какой диск в приводе и открыт ли лоток
 	tst r0
-	beq 3loop
+	bpl 3loop
 	; закрываем лоток
 	call cmejct
 	
-	call del1s
+3aloop:
+	call del2s
+	call cmgdsk ; проверяем какой диск в приводе и открыт ли лоток
+	tst r0
+	bne 3aloop
+
 	; запрашиваем число дорожек
 	call cmgtn 
 	mov r0,ltrack
@@ -602,8 +615,9 @@ main:
 	call cmstop
 	call cmstat
 
+0play:
 	; играем весь диск
-	clr r0
+	mov #3,r0
 	mov ltrack,r1
 	call cmplay
 	call cmstat
