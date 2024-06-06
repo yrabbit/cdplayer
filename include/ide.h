@@ -94,6 +94,7 @@ void ide_setup_pins(void) {
 }
 
 void ide_reset(void) {
+	// special net AND this two singals do reset
 	GPIOC->BSHR = (1 << IDE_CS0) | (1 << IDE_CS1);
 	Delay_Ms(40);
 	GPIOC->BSHR = (1 << (16 + IDE_CS0)) | (1 << (16 + IDE_CS1));
